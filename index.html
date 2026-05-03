@@ -10,7 +10,6 @@
     <script>window.jsPDF = window.jspdf.jsPDF;</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
     <div id="app">
@@ -125,6 +124,21 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Payment Modal -->
+    <div id="payment-modal" class="modal">
+        <div class="modal-content card">
+            <h2>Scan and Pay to Download</h2>
+            <p style="margin: 1rem 0; color: var(--text-muted);">Please scan the QR code below using Google Pay (or any UPI app) and pay <strong>₹50.00</strong> to download the timetable.</p>
+            <div class="qr-container" style="text-align: center; margin: 1.5rem 0;">
+                <img id="gpay-qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=YOUR_UPI_ID@bank%26pn=TimetableGenerator%26am=50.00%26cu=INR" alt="GPay QR Code" style="border-radius: 10px; border: 4px solid var(--glass-border); padding: 10px; background: white;">
+            </div>
+            <div class="modal-actions" style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
+                <button id="btn-cancel-payment" class="btn-secondary">Cancel</button>
+                <button id="btn-confirm-payment" class="btn-primary">I Have Paid (Download)</button>
+            </div>
+        </div>
     </div>
 
     <footer style="text-align: center; padding: 20px; color: var(--text-muted); margin-top: 2rem; font-size: 0.9rem;">

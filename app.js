@@ -441,37 +441,25 @@ function createPDFDoc(name, titlePrefix, gridData, days) {
 }
 
 // --- Payment Integration ---
-function triggerPayment(onSuccess) {
-    if (typeof window.Razorpay === 'undefined') {
-        alert("Payment gateway failed to load. Please check your connection.");
-        return;
-    }
+let pendingPaymentCallback = null;
 
-    var options = {
-        "key": "YOUR_RAZORPAY_KEY_ID", // TODO: Replace with your actual Razorpay Key ID
-        "amount": "5000", // Amount in paise (5000 paise = 50 INR)
-        "currency": "INR",
-        "name": "Timetable Generator",
-        "description": "Timetable PDF Download",
-        "image": "emblem.png",
-        "handler": function (response){
-            // On successful payment, proceed with download
-            onSuccess();
-        },
-        "prefill": {
-            "name": "Teacher",
-            "email": "teacher@school.com"
-        },
-        "theme": {
-            "color": "#8b5cf6"
-        }
-    };
-    var rzp = new window.Razorpay(options);
-    rzp.on('payment.failed', function (response){
-        alert("Payment Failed: " + response.error.description);
-    });
-    rzp.open();
+function triggerPayment(onSuccess) {
+    pendingPaymentCallback = onSuccess;
+    document.getElementById('payment-modal').classList.add('show');
 }
+
+document.getElementById('btn-cancel-payment').onclick = () => {
+    document.getElementById('payment-modal').classList.remove('show');
+    pendingPaymentCallback = null;
+};
+
+document.getElementById('btn-confirm-payment').onclick = () => {
+    document.getElementById('payment-modal').classList.remove('show');
+    if (pendingPaymentCallback) {
+        pendingPaymentCallback();
+        pendingPaymentCallback = null;
+    }
+};
 
 // Boot
 init();
