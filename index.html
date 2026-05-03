@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TIME TABLE GENERATOR</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Libraries via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>window.jsPDF = window.jspdf.jsPDF;</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <div class="header-content">
+                <img src="emblem.png" alt="App Emblem" class="emblem" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzIiIGZpbGw9IiM4YjVjZjYiLz48L3N2Zz4='">
+                <h1>TIME TABLE GENERATOR</h1>
+            </div>
+        </header>
+
+        <main>
+            <!-- Row 1: Settings -->
+            <section class="row card" id="row-settings">
+                <div class="input-group">
+                    <label>ENTER PERIODS</label>
+                    <select id="setting-periods">
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8" selected>8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+                <div class="input-group flex-2">
+                    <label>ENTER SCHOOL NAME</label>
+                    <input type="text" id="setting-school" placeholder="School Name">
+                </div>
+                <div class="input-group">
+                    <label>YEAR</label>
+                    <input type="text" id="setting-year" placeholder="e.g. 2025-26">
+                </div>
+            </section>
+
+            <!-- Row 2: Subjects -->
+            <section class="row card" id="row-subjects">
+                <datalist id="dl-subjects"></datalist>
+                <datalist id="dl-periods"></datalist>
+                <datalist id="dl-stds"></datalist>
+                
+                <div class="input-group flex-2">
+                    <label>ENTER SUBJECTS</label>
+                    <input type="text" id="subject-name" placeholder="Example MALI" list="dl-subjects">
+                </div>
+                <div class="input-group">
+                    <label>ALLOTTED PERIODS</label>
+                    <input type="number" id="subject-periods" value="5" min="1" list="dl-periods">
+                </div>
+                <div class="input-group">
+                    <label>STD</label>
+                    <input type="text" id="subject-std" placeholder="VB" list="dl-stds">
+                </div>
+                <button id="add-subject-rule" class="btn-icon"><i data-lucide="plus"></i></button>
+            </section>
+            <!-- Data list for subjects -->
+            <div class="data-list-container">
+                <ul id="subject-rule-list" class="tag-list"></ul>
+            </div>
+
+            <!-- Row 3: Teachers -->
+            <section class="row card" id="row-teachers">
+                <div class="input-group">
+                    <label>ENTER TEACHERS</label>
+                    <input type="text" id="teacher-name" placeholder="Example SSA">
+                </div>
+                <div class="input-group">
+                    <label>CLASS CHARGE</label>
+                    <select id="teacher-charge">
+                        <option value="">-- None --</option>
+                    </select>
+                </div>
+                <div class="input-group flex-2">
+                    <label>CLASSES TAKEN</label>
+                    <div class="sub-input">
+                        <input type="text" id="teacher-takes-std" placeholder="Std (7A)" list="dl-stds">
+                        <input type="text" id="teacher-takes-subj" placeholder="Sub (MALI)" list="dl-subjects">
+                        <button id="add-teacher-class" class="btn-small"><i data-lucide="plus"></i> Add</button>
+                    </div>
+                    <ul id="current-teacher-classes" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                </div>
+                <button id="add-teacher-rule" class="btn-primary">SAVE <i data-lucide="plus"></i></button>
+            </section>
+            <!-- Data list for teachers -->
+            <div class="data-list-container">
+                <ul id="teacher-rule-list" class="data-cards"></ul>
+            </div>
+
+            <!-- Row 4: Output -->
+            <div class="section-title">
+                <h2><u>OUTPUT</u></h2>
+            </div>
+            <section class="row output-row">
+                <div class="output-card card">
+                    <label>CLASS TIME TABLE</label>
+                    <select id="output-class-select">
+                        <option value="">-- Select --</option>
+                    </select>
+                    <button id="btn-class-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                </div>
+                <div class="output-card card">
+                    <label>TEACHERS TIMETABLE</label>
+                    <select id="output-teacher-select">
+                        <option value="">-- Select --</option>
+                    </select>
+                    <button id="btn-teacher-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                </div>
+                <div class="output-card card">
+                    <label>SCHOOL TIME TABLE</label>
+                    <button id="btn-school-pdf" class="btn-primary" style="margin-top: 10px;">CLICK HERE</button>
+                    <small style="color: var(--text-muted); margin-top: 5px;">ALL ARE PDF</small>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
