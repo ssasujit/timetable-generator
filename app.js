@@ -56,9 +56,9 @@ function init() {
     document.getElementById('add-teacher-class').onclick = addTempTeacherClass;
     document.getElementById('add-teacher-rule').onclick = addTeacherRule;
     
-    document.getElementById('btn-class-pdf').onclick = () => exportPDF('class');
-    document.getElementById('btn-teacher-pdf').onclick = () => exportPDF('teacher');
-    document.getElementById('btn-school-pdf').onclick = () => exportPDF('school');
+    document.getElementById('btn-class-pdf').onclick = () => triggerPayment(() => exportPDF('class'));
+    document.getElementById('btn-teacher-pdf').onclick = () => triggerPayment(() => exportPDF('teacher'));
+    document.getElementById('btn-school-pdf').onclick = () => triggerPayment(() => exportPDF('school'));
 
     renderAll();
 }
@@ -438,6 +438,39 @@ function createPDFDoc(name, titlePrefix, gridData, days) {
     });
     
     return { pdf: doc, name };
+}
+
+// --- Payment Integration ---
+function triggerPayment(onSuccess) {
+    if (typeof window.Razorpay === 'undefined') {
+        alert("Payment gateway failed to load. Please check your connection.");
+        return;
+    }
+
+    var options = {
+        "key": "YOUR_RAZORPAY_KEY_ID", // TODO: Replace with your actual Razorpay Key ID
+        "amount": "5000", // Amount in paise (5000 paise = 50 INR)
+        "currency": "INR",
+        "name": "Timetable Generator",
+        "description": "Timetable PDF Download",
+        "image": "emblem.png",
+        "handler": function (response){
+            // On successful payment, proceed with download
+            onSuccess();
+        },
+        "prefill": {
+            "name": "Teacher",
+            "email": "teacher@school.com"
+        },
+        "theme": {
+            "color": "#8b5cf6"
+        }
+    };
+    var rzp = new window.Razorpay(options);
+    rzp.on('payment.failed', function (response){
+        alert("Payment Failed: " + response.error.description);
+    });
+    rzp.open();
 }
 
 // Boot
