@@ -7,7 +7,10 @@ let state = {
     },
     subjectRules: [], // { id, name, periods, std }
     teacherRules: [], // { id, name, charge, classes: [{std, subj}] }
-    tempTeacherClasses: [] // Used while filling the form
+    tempTeacherClasses: [], // Used while filling the form
+    preferences: [], // { id, subj, type, day, periods: [] }
+    tempPrefPeriods: [],
+    editingTeacherId: null
 };
 
 // DOM Elements
@@ -29,7 +32,16 @@ const els = {
     teacherList: document.getElementById('teacher-rule-list'),
     
     outClassSelect: document.getElementById('output-class-select'),
-    outTeacherSelect: document.getElementById('output-teacher-select')
+    outTeacherSelect: document.getElementById('output-teacher-select'),
+    summaryContainer: document.getElementById('teacher-summary-container'),
+    toastContainer: document.getElementById('toast-container'),
+    
+    prefSubject: document.getElementById('pref-subject'),
+    prefType: document.getElementById('pref-type'),
+    prefDay: document.getElementById('pref-day'),
+    prefPeriodSelect: document.getElementById('pref-period-select'),
+    tempPrefList: document.getElementById('temp-pref-periods'),
+    preferenceList: document.getElementById('preference-list')
 };
 
 function init() {
@@ -37,9 +49,18 @@ function init() {
     if (saved) {
         try {
             state = JSON.parse(saved);
+            // Ensure all arrays exist for backward compatibility
+            state.subjectRules = state.subjectRules || [];
+            state.teacherRules = state.teacherRules || [];
+            state.preferences = state.preferences || [];
+            state.settings = state.settings || { periods: 8, schoolName: '', year: '' };
+            
             // reset temp on load
             state.tempTeacherClasses = [];
-        } catch(e) {}
+            state.tempPrefPeriods = [];
+        } catch(e) {
+            console.error("Failed to load state", e);
+        }
     }
     
     // Bind settings
@@ -52,13 +73,16 @@ function init() {
     els.school.addEventListener('change', e => updateSetting('schoolName', e.target.value));
     els.year.addEventListener('change', e => updateSetting('year', e.target.value));
     
-    document.getElementById('add-subject-rule').onclick = addSubjectRule;
-    document.getElementById('add-teacher-class').onclick = addTempTeacherClass;
-    document.getElementById('add-teacher-rule').onclick = addTeacherRule;
+    document.getElementById('add-subject-rule').onclick = (e) => { e.preventDefault(); addSubjectRule(); };
+    document.getElementById('add-teacher-class').onclick = (e) => { e.preventDefault(); addTempTeacherClass(); };
+    document.getElementById('add-teacher-rule').onclick = (e) => { e.preventDefault(); addTeacherRule(); };
     
-    document.getElementById('btn-class-pdf').onclick = () => triggerPayment(() => exportPDF('class'));
-    document.getElementById('btn-teacher-pdf').onclick = () => triggerPayment(() => exportPDF('teacher'));
-    document.getElementById('btn-school-pdf').onclick = () => triggerPayment(() => exportPDF('school'));
+    document.getElementById('add-pref-period').onclick = (e) => { e.preventDefault(); addTempPrefPeriod(); };
+    document.getElementById('save-preference').onclick = (e) => { e.preventDefault(); savePreference(); };
+    
+    document.getElementById('btn-class-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('class')); };
+    document.getElementById('btn-teacher-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('teacher')); };
+    document.getElementById('btn-school-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('school')); };
 
     renderAll();
 }
@@ -66,20 +90,43 @@ function init() {
 function updateSetting(key, val) {
     state.settings[key] = val;
     save();
+    renderAll();
 }
 
 function save() {
     localStorage.setItem('timetable_dashboard_state', JSON.stringify(state));
 }
 
+function showToast(msg, type = 'error') {
+    if (!els.toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.remove()" style="background:transparent; color:white; font-size:1.2rem;">&times;</button>`;
+    els.toastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('removing');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
 function renderAll() {
-    renderSubjects();
-    renderTempTeacherClasses();
-    renderTeachers();
-    updateOutputSelects();
-    updateChargeSelect();
-    updateDataLists();
-    if(window.lucide) lucide.createIcons();
+    try {
+        renderSubjects();
+        renderTempTeacherClasses();
+        renderTeachers();
+        renderPreferences();
+        renderTempPrefPeriods();
+        updateOutputSelects();
+        updateChargeSelect();
+        updatePrefSubjectSelect();
+        updatePrefPeriodOptions();
+        updateDataLists();
+        renderSummaryTable();
+        if(window.lucide) lucide.createIcons();
+    } catch(e) {
+        console.error("Rendering error", e);
+    }
 }
 
 function updateDataLists() {
@@ -119,7 +166,7 @@ function addSubjectRule() {
     const stdRaw = els.subjStd.value.trim();
     
     if(!name || !periods || !stdRaw) {
-        alert("Please fill Subject, Periods, and STD");
+        showToast("Please fill Subject, Periods, and STD");
         return;
     }
     
@@ -141,6 +188,7 @@ function removeSubject(id) {
     save();
     renderAll();
 }
+window.removeSubject = removeSubject;
 
 function renderSubjects() {
     els.subjList.innerHTML = '';
@@ -161,6 +209,22 @@ function addTempTeacherClass() {
     
     const stds = stdRaw.split(',').map(s => s.trim()).filter(s => s);
     stds.forEach(std => {
+        // Check if this subject in this class is already taken by any teacher
+        const existingTeacher = state.teacherRules.find(t => 
+            t.classes.some(c => c.std === std && c.subj === subj)
+        );
+        
+        if (existingTeacher) {
+            showToast(`ALREADY ENTERED: ${subj} in ${std} is taken by ${existingTeacher.name}`);
+            return;
+        }
+
+        // Check if it's already in the current temp list
+        if (state.tempTeacherClasses.some(c => c.std === std && c.subj === subj)) {
+            showToast("ALREADY ENTERED in current list.");
+            return;
+        }
+
         state.tempTeacherClasses.push({ std, subj });
     });
     
@@ -173,6 +237,7 @@ function removeTempTeacherClass(index) {
     state.tempTeacherClasses.splice(index, 1);
     renderTempTeacherClasses();
 }
+window.removeTempTeacherClass = removeTempTeacherClass;
 
 function renderTempTeacherClasses() {
     els.tempTeacherList.innerHTML = '';
@@ -189,20 +254,42 @@ function addTeacherRule() {
     const charge = els.teacherCharge.value.trim();
     
     if(!name) {
-        alert("Teacher Name is required.");
+        showToast("Teacher Name is required.");
         return;
     }
+
+    if (charge) {
+        const existingCharge = state.teacherRules.find(t => t.charge === charge && t.id !== state.editingTeacherId);
+        if (existingCharge) {
+            showToast(`ALREADY ENTERED: ${charge} Class Charge is taken by ${existingCharge.name}`);
+            return;
+        }
+    }
+
     if(state.tempTeacherClasses.length === 0 && !charge) {
-        alert("Add some classes taken or a class charge.");
+        showToast("Add some classes taken or a class charge.");
         return;
     }
     
-    state.teacherRules.push({
-        id: Date.now(),
-        name,
-        charge,
-        classes: [...state.tempTeacherClasses]
-    });
+    if (state.editingTeacherId) {
+        const idx = state.teacherRules.findIndex(t => t.id === state.editingTeacherId);
+        if (idx !== -1) {
+            state.teacherRules[idx].name = name;
+            state.teacherRules[idx].charge = charge;
+            state.teacherRules[idx].classes = [...state.tempTeacherClasses];
+            showToast(`Teacher ${name} updated!`, 'success');
+        }
+        state.editingTeacherId = null;
+        document.getElementById('add-teacher-rule').innerHTML = 'SAVE <i data-lucide="plus"></i>';
+    } else {
+        state.teacherRules.push({
+            id: Date.now(),
+            name,
+            charge,
+            classes: [...state.tempTeacherClasses]
+        });
+        showToast(`Teacher ${name} saved!`, 'success');
+    }
     
     save();
     
@@ -212,11 +299,125 @@ function addTeacherRule() {
     renderAll();
 }
 
+function editTeacher(id) {
+    const teacher = state.teacherRules.find(t => t.id === id);
+    if (!teacher) return;
+    
+    state.editingTeacherId = id;
+    els.teacherName.value = teacher.name;
+    els.teacherCharge.value = teacher.charge;
+    state.tempTeacherClasses = [...teacher.classes];
+    
+    document.getElementById('add-teacher-rule').innerHTML = 'UPDATE <i data-lucide="check"></i>';
+    document.getElementById('row-teachers').scrollIntoView({ behavior: 'smooth' });
+    
+    renderAll();
+    showToast(`Editing ${teacher.name}...`, 'success');
+}
+window.editTeacher = editTeacher;
+
 function removeTeacher(id) {
     state.teacherRules = state.teacherRules.filter(t => t.id !== id);
     save();
     renderAll();
 }
+window.removeTeacher = removeTeacher;
+
+// --- Preferred Periods ---
+function updatePrefSubjectSelect() {
+    const subjects = Array.from(new Set(state.subjectRules.map(r => r.name)));
+    const currentVal = els.prefSubject.value;
+    els.prefSubject.innerHTML = '<option value="">-- Select --</option>' + 
+        subjects.map(s => `<option value="${s}">${s}</option>`).join('');
+    if (subjects.includes(currentVal)) els.prefSubject.value = currentVal;
+}
+
+function updatePrefPeriodOptions() {
+    const count = parseInt(state.settings.periods) || 8;
+    const currentVal = els.prefPeriodSelect.value;
+    let html = '';
+    for(let i=1; i<=count; i++) html += `<option value="${i}">Period ${i}</option>`;
+    els.prefPeriodSelect.innerHTML = html;
+    if (currentVal && parseInt(currentVal) <= count) els.prefPeriodSelect.value = currentVal;
+}
+
+function addTempPrefPeriod() {
+    const p = parseInt(els.prefPeriodSelect.value);
+    if (!p) {
+        showToast("Select a period first.");
+        return;
+    }
+    if (!state.tempPrefPeriods.includes(p)) {
+        state.tempPrefPeriods.push(p);
+        state.tempPrefPeriods.sort((a,b) => a-b);
+        showToast(`Period ${p} added to rule list`, 'success');
+    } else {
+        showToast("Period already in list.");
+    }
+    renderTempPrefPeriods();
+}
+
+function removeTempPrefPeriod(p) {
+    state.tempPrefPeriods = state.tempPrefPeriods.filter(x => x !== p);
+    renderTempPrefPeriods();
+}
+window.removeTempPrefPeriod = removeTempPrefPeriod;
+
+function renderTempPrefPeriods() {
+    els.tempPrefList.innerHTML = '';
+    state.tempPrefPeriods.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'tag small';
+        li.innerHTML = `Period ${p} <button onclick="removeTempPrefPeriod(${p})">&times;</button>`;
+        els.tempPrefList.appendChild(li);
+    });
+}
+
+function savePreference() {
+    const subj = els.prefSubject.value;
+    const type = els.prefType.value;
+    const day = els.prefDay.value;
+    const periods = [...state.tempPrefPeriods];
+    
+    if (!subj) return showToast("Select a subject first.");
+    if (type !== 'specific' && periods.length === 0) return showToast("Add at least one period.");
+    if (type === 'specific' && (day === 'any' || periods.length !== 1)) return showToast("Select a specific Day and exactly ONE Period.");
+    
+    state.preferences.push({
+        id: Date.now(),
+        subj, type, day, periods
+    });
+    
+    save();
+    state.tempPrefPeriods = [];
+    showToast(`Rule for ${subj} saved!`, 'success');
+    renderAll();
+}
+
+function removePreference(id) {
+    state.preferences = state.preferences.filter(p => p.id !== id);
+    save();
+    renderAll();
+}
+window.removePreference = removePreference;
+
+function renderPreferences() {
+    els.preferenceList.innerHTML = '';
+    state.preferences.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'data-card';
+        let detail = '';
+        if (p.type === 'specific') detail = `Specific: ${p.day} Period ${p.periods[0]}`;
+        else detail = `${p.type.replace('_',' ').toUpperCase()} in periods: ${p.periods.join(', ')} (${p.day})`;
+        
+        li.innerHTML = `
+            <h4>${p.subj} <button class="btn-del" onclick="removePreference(${p.id})"><i data-lucide="trash-2" style="width:16px;"></i></button></h4>
+            <p>${detail}</p>
+        `;
+        els.preferenceList.appendChild(li);
+    });
+}
+
 
 function renderTeachers() {
     els.teacherList.innerHTML = '';
@@ -226,12 +427,74 @@ function renderTeachers() {
         const classesTxt = t.classes.map(c => `${c.std}-${c.subj}`).join(', ') || 'None';
         
         li.innerHTML = `
-            <h4>${t.name} <button class="btn-del" onclick="removeTeacher(${t.id})"><i data-lucide="trash-2" style="width:16px;"></i></button></h4>
+            <h4>${t.name} 
+                <div class="actions">
+                    <button class="btn-edit" onclick="editTeacher(${t.id})"><i data-lucide="edit-3" style="width:16px;"></i></button>
+                    <button class="btn-del" onclick="removeTeacher(${t.id})"><i data-lucide="trash-2" style="width:16px;"></i></button>
+                </div>
+            </h4>
             <div class="charge">Class Charge: ${t.charge || 'None'}</div>
             <p>Classes: ${classesTxt}</p>
         `;
         els.teacherList.appendChild(li);
     });
+}
+
+function renderSummaryTable() {
+    if (!els.summaryContainer) return;
+    if (state.teacherRules.length === 0) {
+        els.summaryContainer.innerHTML = '';
+        return;
+    }
+    
+    let html = `
+        <div class="summary-widget card">
+            <h3>Teacher Workload</h3>
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th class="sl-no">#</th>
+                        <th>TEACHER</th>
+                        <th>SUBJECTS & PERIODS</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    state.teacherRules.forEach((t, idx) => {
+        let total = 0;
+        let subjectsListHtml = '';
+        
+        t.classes.forEach(c => {
+            let rule = state.subjectRules.find(r => r.name === c.subj && r.std === c.std);
+            let p = rule ? rule.periods : 5; // Default to 5 if rule not found, but should usually be found
+            total += p;
+            subjectsListHtml += `
+                <div class="subject-item">
+                    <span class="subject-name">${c.subj} (${c.std})</span>
+                    <span class="subject-periods">${p}</span>
+                </div>
+            `;
+        });
+
+        html += `
+            <tr>
+                <td class="sl-no">${idx + 1}</td>
+                <td class="teacher-name">${t.name}</td>
+                <td>
+                    ${subjectsListHtml}
+                    <div class="total-row">TOTAL: ${total}</div>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    els.summaryContainer.innerHTML = html;
 }
 
 // --- Output Selects ---
@@ -319,10 +582,37 @@ function generateTimetable() {
     // Iterate over requests, find first empty slot in both class and teacher timetable
     reqs.forEach(req => {
         let placed = false;
+        
+        // Check for specific preference first
+        const specificPref = state.preferences.find(p => p.subj === req.subj && p.type === 'specific');
+        if (specificPref) {
+            const day = specificPref.day;
+            const p = specificPref.periods[0];
+            if (!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
+                masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
+                teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+                placed = true;
+            }
+        }
+        
+        if (placed) return;
+
+        // General rules
+        const rules = state.preferences.filter(p => p.subj === req.subj && p.type !== 'specific');
+        
         for(let day of days) {
             if(placed) break;
-            // Start from period 2 since period 1 might be reserved for class teacher
             for(let p=1; p<=state.settings.periods; p++) {
+                // Apply Allowed/Not Allowed rules
+                let isAllowed = true;
+                rules.forEach(rule => {
+                    if (rule.day !== 'any' && rule.day !== day) return;
+                    if (rule.type === 'allowed' && !rule.periods.includes(p)) isAllowed = false;
+                    if (rule.type === 'not_allowed' && rule.periods.includes(p)) isAllowed = false;
+                });
+                
+                if (!isAllowed) continue;
+
                 if(!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
                     masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
                     teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
@@ -331,8 +621,8 @@ function generateTimetable() {
                 }
             }
         }
-        // Unplaced constraints will just be ignored in this greedy approach
     });
+
     
     return { masterGrid, teacherGrid, days, classes: Array.from(classes) };
 }
@@ -341,34 +631,34 @@ function generateTimetable() {
 // --- PDF Exporting ---
 function exportPDF(type) {
     const { masterGrid, teacherGrid, days, classes } = generateTimetable();
-    const { jsPDF } = window.jspdf;
     
     let docs = [];
     
     if (type === 'class') {
         const cls = els.outClassSelect.value;
-        if(!cls) return alert("Select a class first!");
+        if(!cls) return showToast("Select a class first!");
         docs.push(createPDFDoc(cls, 'Class', masterGrid[cls], days));
     } 
     else if (type === 'teacher') {
         const tchr = els.outTeacherSelect.value;
-        if(!tchr) return alert("Select a teacher first!");
+        if(!tchr) return showToast("Select a teacher first!");
         docs.push(createPDFDoc(tchr, 'Teacher', teacherGrid[tchr], days));
     }
     else if (type === 'school') {
-        if(classes.length === 0) return alert("No classes to generate!");
+        if(classes.length === 0) return showToast("No classes to generate!");
         
-        const { jsPDF } = window.jspdf;
         const doc = new jsPDF('l', 'mm', 'a4');
+        const schoolName = state.settings.schoolName || 'School';
+        const year = state.settings.year || 'Export';
         
         days.forEach((day, index) => {
             if (index > 0) doc.addPage();
             
             doc.setFontSize(22);
-            doc.text(state.settings.schoolName || 'School Master Timetable', 14, 20);
+            doc.text(schoolName, 14, 20);
             
             doc.setFontSize(16);
-            doc.text(`Day: ${day} | Year: ${state.settings.year}`, 14, 30);
+            doc.text(`Day: ${day} | Year: ${year}`, 14, 30);
             
             const body = [];
             classes.forEach(cls => {
@@ -394,25 +684,28 @@ function exportPDF(type) {
             });
         });
         
-        doc.save(`Master_School_Timetable_${state.settings.year || 'Export'}.pdf`);
+        const safeSchoolName = schoolName.replace(/[^a-z0-9]/gi, '_');
+        doc.save(`${safeSchoolName}_Master_Timetable.pdf`);
         return;
     }
     
     // Download individual PDF
     docs.forEach(doc => {
-        doc.pdf.save(`Timetable_${doc.name}.pdf`);
+        const safeName = doc.name.replace(/[^a-z0-9]/gi, '_');
+        doc.pdf.save(`Timetable_${safeName}.pdf`);
     });
 }
 
 function createPDFDoc(name, titlePrefix, gridData, days) {
-    const { jsPDF } = window.jspdf;
     const doc = new jsPDF('l', 'mm', 'a4');
+    const schoolName = state.settings.schoolName || 'School Timetable';
+    const year = state.settings.year || '2026';
     
     doc.setFontSize(22);
-    doc.text(state.settings.schoolName || 'School Timetable', 14, 20);
+    doc.text(schoolName, 14, 20);
     
     doc.setFontSize(16);
-    doc.text(`${titlePrefix}: ${name} | Year: ${state.settings.year}`, 14, 30);
+    doc.text(`${titlePrefix}: ${name} | Year: ${year}`, 14, 30);
     
     const body = [];
     days.forEach(day => {
@@ -439,6 +732,7 @@ function createPDFDoc(name, titlePrefix, gridData, days) {
     
     return { pdf: doc, name };
 }
+
 
 // --- Payment Integration ---
 let pendingPaymentCallback = null;

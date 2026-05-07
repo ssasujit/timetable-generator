@@ -12,118 +12,225 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-    <div id="app">
-        <header>
-            <div class="header-content">
-                <img src="emblem.png" alt="App Emblem" class="emblem" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzIiIGZpbGw9IiM4YjVjZjYiLz48L3N2Zz4='">
-                <h1>TIME TABLE GENERATOR</h1>
-            </div>
-        </header>
-
-        <main>
-            <!-- Row 1: Settings -->
-            <section class="row card" id="row-settings">
-                <div class="input-group">
-                    <label>ENTER PERIODS</label>
-                    <select id="setting-periods">
-                        <option value="4">4</option>
-                        <option value="5">5</option>
-                        <option value="6">6</option>
-                        <option value="7">7</option>
-                        <option value="8" selected>8</option>
-                        <option value="9">9</option>
-                        <option value="10">10</option>
-                    </select>
-                </div>
-                <div class="input-group flex-2">
-                    <label>ENTER SCHOOL NAME</label>
-                    <input type="text" id="setting-school" placeholder="School Name">
-                </div>
-                <div class="input-group">
-                    <label>YEAR</label>
-                    <input type="text" id="setting-year" placeholder="e.g. 2025-26">
-                </div>
-            </section>
-
-            <!-- Row 2: Subjects -->
-            <section class="row card" id="row-subjects">
-                <datalist id="dl-subjects"></datalist>
-                <datalist id="dl-periods"></datalist>
-                <datalist id="dl-stds"></datalist>
-                
-                <div class="input-group flex-2">
-                    <label>ENTER SUBJECTS</label>
-                    <input type="text" id="subject-name" placeholder="Example MALI" list="dl-subjects">
-                </div>
-                <div class="input-group">
-                    <label>ALLOTTED PERIODS</label>
-                    <input type="number" id="subject-periods" value="5" min="1" list="dl-periods">
-                </div>
-                <div class="input-group">
-                    <label>STD</label>
-                    <input type="text" id="subject-std" placeholder="VB" list="dl-stds">
-                </div>
-                <button id="add-subject-rule" class="btn-icon"><i data-lucide="plus"></i></button>
-            </section>
-            <!-- Data list for subjects -->
-            <div class="data-list-container">
-                <ul id="subject-rule-list" class="tag-list"></ul>
-            </div>
-
-            <!-- Row 3: Teachers -->
-            <section class="row card" id="row-teachers">
-                <div class="input-group">
-                    <label>ENTER TEACHERS</label>
-                    <input type="text" id="teacher-name" placeholder="Example SSA">
-                </div>
-                <div class="input-group">
-                    <label>CLASS CHARGE</label>
-                    <select id="teacher-charge">
-                        <option value="">-- None --</option>
-                    </select>
-                </div>
-                <div class="input-group flex-2">
-                    <label>CLASSES TAKEN</label>
-                    <div class="sub-input">
-                        <input type="text" id="teacher-takes-std" placeholder="Std (7A)" list="dl-stds">
-                        <input type="text" id="teacher-takes-subj" placeholder="Sub (MALI)" list="dl-subjects">
-                        <button id="add-teacher-class" class="btn-small"><i data-lucide="plus"></i> Add</button>
+    <div id="app" class="dashboard-layout">
+        <aside class="sidebar">
+            <div id="teacher-summary-container"></div>
+        </aside>
+        
+        <div class="main-content">
+            <header>
+                <div class="header-content">
+                    <div class="emblem-container">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 300 300" class="emblem">
+                          <defs>
+                            <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                              <stop offset="0%" style="stop-color:#fde68a;stop-opacity:1" />
+                              <stop offset="50%" style="stop-color:#b45309;stop-opacity:1" />
+                              <stop offset="100%" style="stop-color:#fde68a;stop-opacity:1" />
+                            </linearGradient>
+                            <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                              <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+                              <feOffset dx="2" dy="2" result="offsetblur" />
+                              <feComponentTransfer>
+                                <feFuncA type="linear" slope="0.5" />
+                              </feComponentTransfer>
+                              <feMerge>
+                                <feMergeNode />
+                                <feMergeNode in="SourceGraphic" />
+                              </feMerge>
+                            </filter>
+                          </defs>
+                          <circle cx="150" cy="150" r="140" fill="url(#goldGrad)" stroke="#78350f" stroke-width="2" filter="url(#shadow)" />
+                          <circle cx="150" cy="150" r="120" fill="none" stroke="#78350f" stroke-width="1" stroke-dasharray="10,5" opacity="0.3" />
+                          <defs>
+                            <path id="circlePath" d="M 150, 150 m -110, 0 a 110,110 0 1,1 220,0 a 110,110 0 1,1 -220,0" />
+                          </defs>
+                          <text fill="#0f172a" font-family="Outfit, sans-serif" font-weight="800" font-size="16" letter-spacing="2">
+                            <textPath href="#circlePath" startOffset="25%">THE MASTERGRID</textPath>
+                            <textPath href="#circlePath" startOffset="75%">TIMETABLE SYSTEM</textPath>
+                          </text>
+                          <g transform="translate(75, 75) scale(0.75)">
+                            <g stroke="#78350f" stroke-width="1" opacity="0.4">
+                              <line x1="20" y1="20" x2="180" y2="20" /><line x1="20" y1="50" x2="180" y2="50" /><line x1="20" y1="80" x2="180" y2="80" /><line x1="20" y1="110" x2="180" y2="110" /><line x1="20" y1="140" x2="180" y2="140" />
+                              <line x1="20" y1="20" x2="20" y2="140" /><line x1="50" y1="20" x2="50" y2="140" /><line x1="80" y1="20" x2="80" y2="140" /><line x1="110" y1="20" x2="110" y2="140" /><line x1="140" y1="20" x2="140" y2="140" /><line x1="170" y1="20" x2="170" y2="140" />
+                            </g>
+                            <path d="M40 130 V30 L90 80 L140 30 V130" fill="none" stroke="#0f172a" stroke-width="10" stroke-linejoin="round" stroke-linecap="round" />
+                            <path d="M140 80 V110 Q140 130 120 130 H80 Q60 130 60 110 V90" fill="none" stroke="#0ea5e9" stroke-width="10" stroke-linecap="round" />
+                            <path d="M90 110 H130 V80 H110" fill="none" stroke="#f97316" stroke-width="10" stroke-linecap="round" />
+                          </g>
+                        </svg>
                     </div>
-                    <ul id="current-teacher-classes" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                    <div class="brand-text">
+                        <h1>Master<span>Grid</span></h1>
+                        <p class="tagline">the timetable generator</p>
+                    </div>
                 </div>
-                <button id="add-teacher-rule" class="btn-primary">SAVE <i data-lucide="plus"></i></button>
-            </section>
-            <!-- Data list for teachers -->
-            <div class="data-list-container">
-                <ul id="teacher-rule-list" class="data-cards"></ul>
-            </div>
+            </header>
 
-            <!-- Row 4: Output -->
-            <div class="section-title">
-                <h2><u>OUTPUT</u></h2>
-            </div>
-            <section class="row output-row">
-                <div class="output-card card">
-                    <label>CLASS TIME TABLE</label>
-                    <select id="output-class-select">
-                        <option value="">-- Select --</option>
-                    </select>
-                    <button id="btn-class-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+            <main>
+                <!-- Row 1: Settings -->
+                <div class="section-title">
+                    <h2>SETTINGS</h2>
                 </div>
-                <div class="output-card card">
-                    <label>TEACHERS TIMETABLE</label>
-                    <select id="output-teacher-select">
-                        <option value="">-- Select --</option>
-                    </select>
-                    <button id="btn-teacher-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                <section class="row card" id="row-settings">
+                    <div class="input-group">
+                        <label>ENTER PERIODS</label>
+                        <select id="setting-periods">
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8" selected>8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                        </select>
+                    </div>
+                    <div class="input-group flex-2">
+                        <label>ENTER SCHOOL NAME</label>
+                        <input type="text" id="setting-school" placeholder="School Name">
+                    </div>
+                    <div class="input-group">
+                        <label>YEAR</label>
+                        <input type="text" id="setting-year" placeholder="e.g. 2025-26">
+                    </div>
+                </section>
+
+                <!-- Row 2: Subjects -->
+                <div class="section-title">
+                    <h2>SUBJECTS</h2>
                 </div>
-                <div class="output-card card">
-                    <label>SCHOOL TIME TABLE</label>
-                    <button id="btn-school-pdf" class="btn-primary" style="margin-top: 10px;">CLICK HERE</button>
-                    <small style="color: var(--text-muted); margin-top: 5px;">ALL ARE PDF</small>
+                <section class="row card" id="row-subjects">
+                    <datalist id="dl-subjects"></datalist>
+                    <datalist id="dl-periods"></datalist>
+                    <datalist id="dl-stds"></datalist>
+                    
+                    <div class="input-group flex-2">
+                        <label>ENTER SUBJECTS</label>
+                        <input type="text" id="subject-name" placeholder="Example MALI" list="dl-subjects">
+                    </div>
+                    <div class="input-group">
+                        <label>ALLOTTED PERIODS</label>
+                        <input type="number" id="subject-periods" value="5" min="1" list="dl-periods">
+                    </div>
+                    <div class="input-group">
+                        <label>STD</label>
+                        <input type="text" id="subject-std" placeholder="VB" list="dl-stds">
+                    </div>
+                    <button id="add-subject-rule" class="btn-icon"><i data-lucide="plus"></i></button>
+                </section>
+                <!-- Data list for subjects -->
+                <div class="data-list-container">
+                    <ul id="subject-rule-list" class="tag-list"></ul>
                 </div>
-            </section>
-        </main>
+
+                <!-- Row 3: Preferred Periods -->
+                <div class="section-title">
+                    <h2>PREFERRED PERIODS</h2>
+                </div>
+                <section class="row card" id="row-preferences">
+                    <div class="input-group">
+                        <label>SUBJECT</label>
+                        <select id="pref-subject">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>RULE TYPE</label>
+                        <select id="pref-type">
+                            <option value="allowed">ALLOWED</option>
+                            <option value="not_allowed">NOT ALLOWED</option>
+                            <option value="specific">SPECIFIC DAY & PERIOD</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>DAY</label>
+                        <select id="pref-day">
+                            <option value="any">ANY DAY</option>
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>PERIOD(S)</label>
+                        <div class="sub-input">
+                            <select id="pref-period-select" style="flex: 1;">
+                                <!-- Dynamic options -->
+                            </select>
+                            <button type="button" id="add-pref-period" class="btn-small">Add</button>
+                        </div>
+                        <ul id="temp-pref-periods" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                    </div>
+                    <button type="button" id="save-preference" class="btn-primary">SAVE RULE <i data-lucide="check-circle"></i></button>
+                </section>
+                <div class="data-list-container">
+                    <ul id="preference-list" class="data-cards"></ul>
+                </div>
+
+                <!-- Row 4: Teachers -->
+                <div class="section-title">
+                    <h2>TEACHERS</h2>
+                </div>
+                <section class="row card" id="row-teachers">
+                    <div class="input-group">
+                        <label>ENTER TEACHERS</label>
+                        <input type="text" id="teacher-name" placeholder="Example SSA">
+                    </div>
+                    <div class="input-group">
+                        <label>CLASS CHARGE</label>
+                        <select id="teacher-charge">
+                            <option value="">-- None --</option>
+                        </select>
+                    </div>
+                    <div class="input-group flex-2">
+                        <label>CLASSES TAKEN</label>
+                        <div class="sub-input">
+                            <input type="text" id="teacher-takes-std" placeholder="Std (7A)" list="dl-stds">
+                            <input type="text" id="teacher-takes-subj" placeholder="Sub (MALI)" list="dl-subjects">
+                            <button id="add-teacher-class" class="btn-small"><i data-lucide="plus"></i> Add</button>
+                        </div>
+                        <ul id="current-teacher-classes" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                    </div>
+                    <button id="add-teacher-rule" class="btn-primary">SAVE <i data-lucide="plus"></i></button>
+                </section>
+                <!-- Data list for teachers -->
+                <div class="data-list-container">
+                    <ul id="teacher-rule-list" class="data-cards"></ul>
+                </div>
+
+                <!-- Row 5: Output -->
+                <div class="section-title">
+                    <h2>YOUR NEW TIMETABLE.</h2>
+                </div>
+                <section class="row output-row">
+                    <div class="output-card card">
+                        <label>CLASS TIME TABLE</label>
+                        <select id="output-class-select">
+                            <option value="">-- Select --</option>
+                        </select>
+                        <button id="btn-class-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                    </div>
+                    <div class="output-card card">
+                        <label>TEACHERS TIMETABLE</label>
+                        <select id="output-teacher-select">
+                            <option value="">-- Select --</option>
+                        </select>
+                        <button id="btn-teacher-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                    </div>
+                    <div class="output-card card">
+                        <label>SCHOOL TIME TABLE</label>
+                        <button id="btn-school-pdf" class="btn-primary" style="margin-top: 10px;">CLICK HERE</button>
+                        <small style="color: var(--text-muted); margin-top: 5px;">ALL ARE PDF</small>
+                    </div>
+                </section>
+            </main>
+
+            <footer style="text-align: center; padding: 20px; color: var(--text-muted); margin-top: 2rem; font-size: 0.9rem;">
+                All rights reserved &copy; Copyright 2026
+            </footer>
+        </div>
     </div>
 
     <!-- Payment Modal -->
@@ -141,9 +248,8 @@
         </div>
     </div>
 
-    <footer style="text-align: center; padding: 20px; color: var(--text-muted); margin-top: 2rem; font-size: 0.9rem;">
-        All rights reserved &copy; Copyright 2026
-    </footer>
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
 
     <script src="app.js"></script>
     <script>
