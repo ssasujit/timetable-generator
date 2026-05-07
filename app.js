@@ -61,6 +61,16 @@ function init() {
         } catch(e) {
             console.error("Failed to load state", e);
         }
+    } else {
+        // First time initialization
+        state.preferences.push({
+            id: Date.now(),
+            subj: 'SV',
+            type: 'specific',
+            day: 'Friday',
+            periods: [7]
+        });
+        save();
     }
     
     // Bind settings
@@ -562,65 +572,111 @@ function generateTimetable() {
         }
     });
 
+    // Separate requirements into passes
+    let specificReqs = [];
+    let otherReqs = [];
+
     state.teacherRules.forEach(t => {
         t.classes.forEach(c => {
-            // find allotted periods
             let rule = state.subjectRules.find(r => r.std === c.std && r.name === c.subj);
-            let pCount = rule ? parseInt(rule.periods) : 5; // default 5
-            
+            let pCount = rule ? parseInt(rule.periods) : 5;
             let key = `${t.name}_${c.std}_${c.subj}`;
             let alreadyPlaced = prePlacedCounts[key] || 0;
             let remaining = pCount - alreadyPlaced;
             
+            const specificPref = state.preferences.find(p => p.subj === c.subj && p.type === 'specific');
+
             for(let i=0; i<remaining; i++) {
-                reqs.push({ teacher: t.name, std: c.std, subj: c.subj });
+                const req = { teacher: t.name, std: c.std, subj: c.subj };
+                if (specificPref) {
+                    specificReqs.push({ ...req, specific: specificPref });
+                } else {
+                    otherReqs.push(req);
+                }
             }
         });
     });
-    
-    // Simple Greedy Placement
-    // Iterate over requests, find first empty slot in both class and teacher timetable
-    reqs.forEach(req => {
-        let placed = false;
-        
-        // Check for specific preference first
-        const specificPref = state.preferences.find(p => p.subj === req.subj && p.type === 'specific');
-        if (specificPref) {
-            const day = specificPref.day;
-            const p = specificPref.periods[0];
-            if (!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
-                masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
-                teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
-                placed = true;
-            }
-        }
-        
-        if (placed) return;
 
-        // General rules
+    // Helper to place a requirement
+    const tryPlace = (req, useSpread) => {
         const rules = state.preferences.filter(p => p.subj === req.subj && p.type !== 'specific');
-        
         for(let day of days) {
-            if(placed) break;
+            if (useSpread) {
+                const alreadyHasSubj = Object.values(masterGrid[req.std][day]).some(val => val.startsWith(req.subj));
+                if (alreadyHasSubj) continue;
+            }
             for(let p=1; p<=state.settings.periods; p++) {
-                // Apply Allowed/Not Allowed rules
+                // Check general rules
                 let isAllowed = true;
                 rules.forEach(rule => {
                     if (rule.day !== 'any' && rule.day !== day) return;
                     if (rule.type === 'allowed' && !rule.periods.includes(p)) isAllowed = false;
                     if (rule.type === 'not_allowed' && rule.periods.includes(p)) isAllowed = false;
                 });
-                
                 if (!isAllowed) continue;
 
                 if(!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
                     masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
                     teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
-                    placed = true;
-                    break;
+                    return true;
                 }
             }
         }
+        return false;
+    };
+
+    // 1. Pass 0: Specific Preferences
+    specificReqs.forEach(req => {
+        const day = req.specific.day;
+        const p = req.specific.periods[0];
+        if (!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
+            masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
+            teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+        } else {
+            // If clash, treat as regular req for later passes
+            otherReqs.push(req);
+        }
+    });
+
+    // 2. Split otherReqs into Pass 1 (Spread) and Pass 2 (Overflow)
+    let spreadReqs = [];
+    let overflowReqs = [];
+    let tripleCounts = {}; // Track how many of this triple we are trying to place
+
+    otherReqs.forEach(req => {
+        let key = `${req.teacher}_${req.std}_${req.subj}`;
+        tripleCounts[key] = (tripleCounts[key] || 0);
+        
+        // Count how many are ALREADY placed (including by Class Teacher rule)
+        let placedAlready = 0;
+        days.forEach(d => {
+            for(let p=1; p<=state.settings.periods; p++) {
+                if (masterGrid[req.std][d][p] && masterGrid[req.std][d][p].startsWith(req.subj)) {
+                    placedAlready++;
+                }
+            }
+        });
+
+        // If we haven't hit 1 per day (5 total) for this class-subj, put in spread
+        if (placedAlready + tripleCounts[key] < 5) {
+            spreadReqs.push(req);
+        } else {
+            overflowReqs.push(req);
+        }
+        tripleCounts[key]++;
+    });
+
+    // 3. Pass 1: Spread Placement
+    let failedSpread = [];
+    spreadReqs.forEach(req => {
+        if (!tryPlace(req, true)) {
+            failedSpread.push(req);
+        }
+    });
+
+    // 4. Pass 2: Overflow & Failed Spread (Allow same day)
+    [...overflowReqs, ...failedSpread].forEach(req => {
+        tryPlace(req, false);
     });
 
     
