@@ -73,6 +73,7 @@
                     <h2>SETTINGS</h2>
                 </div>
                 <section class="row card" id="row-settings">
+                    <div id="payment-status-banner" class="payment-banner" style="display: none; width: 100%; margin-bottom: 1.5rem; padding: 1rem; border-radius: 10px; text-align: center; font-weight: 600;"></div>
                     <div class="input-group">
                         <label>ENTER PERIODS</label>
                         <select id="setting-periods">
@@ -105,8 +106,8 @@
                     <datalist id="dl-stds"></datalist>
                     
                     <div class="input-group flex-2">
-                        <label>ENTER SUBJECTS</label>
-                        <input type="text" id="subject-name" placeholder="Example MALI" list="dl-subjects">
+                        <label>ENTER SUBJECTS <span style="font-size:0.7rem;opacity:0.6;">(comma separated)</span></label>
+                        <input type="text" id="subject-name" placeholder="e.g. MAL I, ENG, SS, BS" list="dl-subjects">
                     </div>
                     <div class="input-group">
                         <label>ALLOTTED PERIODS</label>
@@ -114,13 +115,15 @@
                     </div>
                     <div class="input-group">
                         <label>STD</label>
-                        <input type="text" id="subject-std" placeholder="VB" list="dl-stds">
+                        <datalist id="dl-stds-combo">
+                            <option value="All">(All)</option>
+                        </datalist>
+                        <input type="text" id="subject-std" placeholder="e.g. 5A or All" list="dl-stds-combo" autocomplete="off">
                     </div>
                     <button id="add-subject-rule" class="btn-icon"><i data-lucide="plus"></i></button>
                 </section>
                 <!-- Data list for subjects -->
-                <div class="data-list-container">
-                    <ul id="subject-rule-list" class="tag-list"></ul>
+                <div class="data-list-container" id="subject-table-container" style="overflow-x: auto; margin-top: 1rem;">
                 </div>
 
                 <!-- Row 3: Preferred Periods -->
@@ -135,14 +138,21 @@
                         </select>
                     </div>
                     <div class="input-group">
+                        <label>TEACHER</label>
+                        <select id="pref-teacher">
+                            <option value="">-- Any / Select --</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
                         <label>RULE TYPE</label>
                         <select id="pref-type">
                             <option value="allowed">ALLOWED</option>
                             <option value="not_allowed">NOT ALLOWED</option>
                             <option value="specific">SPECIFIC DAY & PERIOD</option>
+                            <option value="clubbed">CLUBBED CLASSES</option>
                         </select>
                     </div>
-                    <div class="input-group">
+                    <div class="input-group" id="pref-day-group">
                         <label>DAY</label>
                         <select id="pref-day">
                             <option value="any">ANY DAY</option>
@@ -153,7 +163,7 @@
                             <option value="Friday">Friday</option>
                         </select>
                     </div>
-                    <div class="input-group">
+                    <div class="input-group" id="pref-period-group">
                         <label>PERIOD(S)</label>
                         <div class="sub-input">
                             <select id="pref-period-select" style="flex: 1;">
@@ -162,6 +172,10 @@
                             <button type="button" id="add-pref-period" class="btn-small">Add</button>
                         </div>
                         <ul id="temp-pref-periods" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                    </div>
+                    <div class="input-group" id="pref-clubbed-group" style="display: none;">
+                        <label>CLASSES <span style="font-size:0.7rem;opacity:0.6;">(comma separated)</span></label>
+                        <input type="text" id="pref-clubbed-classes" placeholder="e.g. 5A, 5B">
                     </div>
                     <button type="button" id="save-preference" class="btn-primary">SAVE RULE <i data-lucide="check-circle"></i></button>
                 </section>
@@ -176,7 +190,7 @@
                 <section class="row card" id="row-teachers">
                     <div class="input-group">
                         <label>ENTER TEACHERS</label>
-                        <input type="text" id="teacher-name" placeholder="Example SSA">
+                        <input type="text" id="teacher-name" placeholder="Example SKK">
                     </div>
                     <div class="input-group">
                         <label>CLASS CHARGE</label>
@@ -210,18 +224,27 @@
                         <select id="output-class-select">
                             <option value="">-- Select --</option>
                         </select>
-                        <button id="btn-class-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                        <div style="display:flex; gap:0.5rem; width:100%;">
+                            <button id="btn-class-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
+                            <button id="btn-class-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
+                        </div>
                     </div>
                     <div class="output-card card">
                         <label>TEACHERS TIMETABLE</label>
                         <select id="output-teacher-select">
                             <option value="">-- Select --</option>
                         </select>
-                        <button id="btn-teacher-pdf" class="btn-secondary"><i data-lucide="download"></i> Download PDF</button>
+                        <div style="display:flex; gap:0.5rem; width:100%;">
+                            <button id="btn-teacher-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
+                            <button id="btn-teacher-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
+                        </div>
                     </div>
                     <div class="output-card card">
                         <label>SCHOOL TIME TABLE</label>
-                        <button id="btn-school-pdf" class="btn-primary" style="margin-top: 10px;">CLICK HERE</button>
+                        <div style="display:flex; gap:0.5rem; width:100%; margin-top:10px;">
+                            <button id="btn-school-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
+                            <button id="btn-school-pdf" class="btn-primary" style="flex:1;">CLICK HERE</button>
+                        </div>
                         <small style="color: var(--text-muted); margin-top: 5px;">ALL ARE PDF</small>
                     </div>
                 </section>
@@ -237,14 +260,33 @@
     <div id="payment-modal" class="modal">
         <div class="modal-content card">
             <h2>Scan and Pay to Download</h2>
+            <p style="margin: 0.5rem 0; color: var(--danger); font-weight: 700;">Payment is done only after checking the preview</p>
             <p style="margin: 1rem 0; color: var(--text-muted);">Please scan the QR code below using Google Pay (or any UPI app) and pay <strong>₹50.00</strong> to download the timetable.</p>
             <div class="qr-container" style="text-align: center; margin: 1.5rem 0;">
-                <img id="gpay-qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=YOUR_UPI_ID@bank%26pn=TimetableGenerator%26am=50.00%26cu=INR" alt="GPay QR Code" style="border-radius: 10px; border: 4px solid var(--glass-border); padding: 10px; background: white;">
+                <img id="gpay-qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=YOUR_UPI_ID@bank%26pn=TimetableGenerator%26am=50.00%26cu=INR" alt="GPay QR Code" style="border-radius: 10px; border: 4px solid var(--border); padding: 10px; background: white;">
             </div>
             <div class="modal-actions" style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
                 <button id="btn-cancel-payment" class="btn-secondary">Cancel</button>
                 <button id="btn-confirm-payment" class="btn-primary">I Have Paid (Download)</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-content card preview-modal-content">
+            <div class="preview-header">
+                <h2 id="preview-title">Timetable Preview</h2>
+                <button id="btn-close-preview" class="btn-icon" style="width: 36px; height: 36px; border-radius: 50%;"><i data-lucide="x"></i></button>
+            </div>
+            
+            <div class="watermark-overlay"></div>
+            
+            <div id="preview-scroll-container" class="preview-scroll-container">
+                <!-- Table injected here -->
+            </div>
+            
+            <p style="color: var(--danger); font-size: 0.8rem; margin-top: 1rem; font-weight: 600; text-align: center;">PREVIEW ONLY - Screenshotting this page is restricted.</p>
         </div>
     </div>
 

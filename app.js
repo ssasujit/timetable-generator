@@ -10,7 +10,9 @@ let state = {
     tempTeacherClasses: [], // Used while filling the form
     preferences: [], // { id, subj, type, day, periods: [] }
     tempPrefPeriods: [],
-    editingTeacherId: null
+    editingTeacherId: null,
+    paymentRecords: {}, // { "SchoolName_IP": timestamp }
+    userIp: 'unknown'
 };
 
 // DOM Elements
@@ -22,7 +24,7 @@ const els = {
     subjName: document.getElementById('subject-name'),
     subjPeriods: document.getElementById('subject-periods'),
     subjStd: document.getElementById('subject-std'),
-    subjList: document.getElementById('subject-rule-list'),
+    subjTableContainer: document.getElementById('subject-table-container'),
     
     teacherName: document.getElementById('teacher-name'),
     teacherCharge: document.getElementById('teacher-charge'),
@@ -37,11 +39,25 @@ const els = {
     toastContainer: document.getElementById('toast-container'),
     
     prefSubject: document.getElementById('pref-subject'),
+    prefTeacher: document.getElementById('pref-teacher'),
     prefType: document.getElementById('pref-type'),
     prefDay: document.getElementById('pref-day'),
     prefPeriodSelect: document.getElementById('pref-period-select'),
     tempPrefList: document.getElementById('temp-pref-periods'),
-    preferenceList: document.getElementById('preference-list')
+    prefClubbedClasses: document.getElementById('pref-clubbed-classes'),
+    preferenceList: document.getElementById('preference-list'),
+    
+    // Groups for toggling visibility
+    prefDayGroup: document.getElementById('pref-day-group'),
+    prefPeriodGroup: document.getElementById('pref-period-group'),
+    prefClubbedGroup: document.getElementById('pref-clubbed-group'),
+    
+    // Preview Modal
+    previewModal: document.getElementById('preview-modal'),
+    previewScrollContainer: document.getElementById('preview-scroll-container'),
+    previewTitle: document.getElementById('preview-title'),
+    btnClosePreview: document.getElementById('btn-close-preview'),
+    paymentBanner: document.getElementById('payment-status-banner')
 };
 
 function init() {
@@ -54,6 +70,7 @@ function init() {
             state.teacherRules = state.teacherRules || [];
             state.preferences = state.preferences || [];
             state.settings = state.settings || { periods: 8, schoolName: '', year: '' };
+            state.paymentRecords = state.paymentRecords || {};
             
             // reset temp on load
             state.tempTeacherClasses = [];
@@ -90,11 +107,66 @@ function init() {
     document.getElementById('add-pref-period').onclick = (e) => { e.preventDefault(); addTempPrefPeriod(); };
     document.getElementById('save-preference').onclick = (e) => { e.preventDefault(); savePreference(); };
     
+    els.prefType.addEventListener('change', (e) => {
+        const isClubbed = e.target.value === 'clubbed';
+        els.prefDayGroup.style.display = isClubbed ? 'none' : 'flex';
+        els.prefPeriodGroup.style.display = isClubbed ? 'none' : 'flex';
+        els.prefClubbedGroup.style.display = isClubbed ? 'flex' : 'none';
+    });
+    
     document.getElementById('btn-class-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('class')); };
     document.getElementById('btn-teacher-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('teacher')); };
     document.getElementById('btn-school-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('school')); };
 
+    // Preview
+    document.getElementById('btn-class-preview').onclick = (e) => { e.preventDefault(); showPreview('class'); };
+    document.getElementById('btn-teacher-preview').onclick = (e) => { e.preventDefault(); showPreview('teacher'); };
+    document.getElementById('btn-school-preview').onclick = (e) => { e.preventDefault(); showPreview('school'); };
+    
+    if (els.btnClosePreview) {
+        els.btnClosePreview.onclick = (e) => {
+            e.preventDefault();
+            els.previewModal.classList.remove('show');
+        };
+    }
+
+    setupAntiScreenshot();
+    fetchUserIp();
     renderAll();
+}
+
+async function fetchUserIp() {
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        state.userIp = data.ip;
+        renderAll();
+    } catch (e) {
+        console.error("Failed to fetch IP", e);
+    }
+}
+
+function setupAntiScreenshot() {
+    // Prevent right click on preview modal content
+    if (els.previewModal) {
+        els.previewModal.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    // Blur on key presses associated with screenshots
+    window.addEventListener('keydown', (e) => {
+        // PrintScreen, Windows+Shift+S, Cmd+Shift+3/4
+        if (e.key === 'PrintScreen' || 
+            (e.metaKey && e.shiftKey) || 
+            (e.ctrlKey && e.key === 'p')) {
+            
+            if (els.previewScrollContainer) {
+                els.previewScrollContainer.classList.add('blur-content');
+                setTimeout(() => {
+                    els.previewScrollContainer.classList.remove('blur-content');
+                }, 3000);
+            }
+        }
+    });
 }
 
 function updateSetting(key, val) {
@@ -105,6 +177,14 @@ function updateSetting(key, val) {
 
 function save() {
     localStorage.setItem('timetable_dashboard_state', JSON.stringify(state));
+}
+
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
 }
 
 function showToast(msg, type = 'error') {
@@ -129,13 +209,55 @@ function renderAll() {
         renderTempPrefPeriods();
         updateOutputSelects();
         updateChargeSelect();
+        updateSubjectStdSelect();
         updatePrefSubjectSelect();
+        updatePrefTeacherSelect();
         updatePrefPeriodOptions();
         updateDataLists();
         renderSummaryTable();
+        checkPaymentStatus();
         if(window.lucide) lucide.createIcons();
     } catch(e) {
         console.error("Rendering error", e);
+    }
+}
+
+function checkPaymentStatus() {
+    if (!els.paymentBanner) return;
+    
+    const school = (state.settings.schoolName || '').trim();
+    if (!school) {
+        els.paymentBanner.style.display = 'none';
+        return;
+    }
+
+    const key = `${school}_${state.userIp}`;
+    const paymentTimestamp = state.paymentRecords[key];
+    
+    if (paymentTimestamp) {
+        const now = Date.now();
+        const diffDays = (now - paymentTimestamp) / (1000 * 60 * 60 * 24);
+        
+        if (diffDays <= 3) {
+            const remaining = (3 - diffDays).toFixed(1);
+            els.paymentBanner.style.display = 'block';
+            els.paymentBanner.className = 'payment-banner valid';
+            els.paymentBanner.innerHTML = `✓ Payment verified for ${school}. You can edit and update for ${remaining} more days.`;
+        } else {
+            els.paymentBanner.style.display = 'block';
+            els.paymentBanner.className = 'payment-banner expired';
+            els.paymentBanner.innerHTML = `! Edit window expired for ${school}. Please make payment first to download/edit.`;
+        }
+    } else {
+        // Check if any other school was paid for from this IP
+        const otherPayments = Object.keys(state.paymentRecords).filter(k => k.endsWith(`_${state.userIp}`));
+        if (otherPayments.length > 0) {
+            els.paymentBanner.style.display = 'block';
+            els.paymentBanner.className = 'payment-banner expired';
+            els.paymentBanner.innerHTML = `! In this IP address only one school can make timetable. Make payment first for ${school}.`;
+        } else {
+            els.paymentBanner.style.display = 'none';
+        }
     }
 }
 
@@ -169,27 +291,65 @@ function updateChargeSelect() {
     if (classes.has(currentVal)) els.teacherCharge.value = currentVal;
 }
 
-// --- Subject Rules ---
+function updateSubjectStdSelect() {
+    let classes = new Set();
+    state.subjectRules.forEach(r => classes.add(r.std));
+    const dl = document.getElementById('dl-stds-combo');
+    if (dl) {
+        dl.innerHTML =
+            '<option value="All">(All)</option>' +
+            Array.from(classes).map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+}
+
 function addSubjectRule() {
-    const name = els.subjName.value.trim();
+    const nameRaw = els.subjName.value.trim();
     const periods = parseInt(els.subjPeriods.value);
     const stdRaw = els.subjStd.value.trim();
-    
-    if(!name || !periods || !stdRaw) {
-        showToast("Please fill Subject, Periods, and STD");
+
+    if (!nameRaw || !periods || !stdRaw) {
+        showToast("Please fill Subject(s), Periods, and STD");
         return;
     }
-    
-    const stds = stdRaw.split(',').map(s => s.trim()).filter(s => s);
-    stds.forEach(std => {
-        state.subjectRules.push({ id: Date.now() + Math.random(), name, periods, std });
+
+    // Split comma-separated subject names
+    const names = nameRaw.split(',').map(s => s.trim()).filter(s => s);
+
+    // Resolve class list
+    let stds;
+    if (stdRaw === 'All') {
+        stds = Array.from(new Set(state.subjectRules.map(r => r.std)));
+        if (stds.length === 0) {
+            showToast("No classes defined yet. Add a specific class first, then use (All).");
+            return;
+        }
+    } else {
+        stds = stdRaw.split(',').map(s => s.trim()).filter(s => s);
+    }
+
+    // Create one entry per subject × per class
+    let addedCount = 0;
+    names.forEach(name => {
+        stds.forEach(std => {
+            const exists = state.subjectRules.some(r => r.name === name && r.std === std);
+            if (!exists) {
+                state.subjectRules.push({ id: Date.now() + Math.random(), name, periods, std });
+                addedCount++;
+            }
+        });
     });
-    
+
+    if (addedCount === 0) {
+        showToast("All subjects already exist for the selected class(es).");
+        return;
+    }
+
     save();
-    
+
     els.subjName.value = '';
     els.subjPeriods.value = 5;
     els.subjStd.value = '';
+    showToast(`✓ Added ${addedCount} subject-class entries successfully!`, 'success');
     renderAll();
 }
 
@@ -200,14 +360,79 @@ function removeSubject(id) {
 }
 window.removeSubject = removeSubject;
 
+function removeSubjectRow(cls) {
+    if (confirm(`Are you sure you want to delete all subjects for class ${cls}?`)) {
+        state.subjectRules = state.subjectRules.filter(r => r.std !== cls);
+        save();
+        renderAll();
+    }
+}
+window.removeSubjectRow = removeSubjectRow;
+
 function renderSubjects() {
-    els.subjList.innerHTML = '';
-    state.subjectRules.forEach(r => {
-        const li = document.createElement('li');
-        li.className = 'tag';
-        li.innerHTML = `${r.std} - ${r.name} (${r.periods} periods) <button onclick="removeSubject(${r.id})"><i data-lucide="x" style="width:14px;height:14px;"></i></button>`;
-        els.subjList.appendChild(li);
+    if (!els.subjTableContainer) return;
+    if (state.subjectRules.length === 0) {
+        els.subjTableContainer.innerHTML = '';
+        return;
+    }
+
+    const classes = Array.from(new Set(state.subjectRules.map(r => r.std))).sort();
+    const subjects = Array.from(new Set(state.subjectRules.map(r => r.name))).sort();
+
+    let html = `
+        <div class="subject-grid-wrapper">
+            <table class="subject-grid-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        ${subjects.map(subj => `<th>${subj}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    classes.forEach(cls => {
+        html += `<tr>
+            <td class="class-name">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; padding-left: 0.5rem;">
+                    <span>${cls}</span>
+                    <button class="btn-del-cell" onclick="removeSubjectRow('${cls}')" title="Delete entire row" style="color:var(--danger); background:rgba(239, 68, 68, 0.1); padding: 4px; border-radius: 6px;">
+                        <i data-lucide="trash-2" style="width:14px; height:14px;"></i>
+                    </button>
+                </div>
+            </td>`;
+        subjects.forEach(subj => {
+            const rule = state.subjectRules.find(r => r.std === cls && r.name === subj);
+            if (rule) {
+                html += `
+                    <td style="text-align:center;">
+                        <div class="period-badge">
+                            <span>${rule.periods}</span>
+                            <button class="btn-del-cell" onclick="removeSubject(${rule.id})" title="Remove">
+                                <i data-lucide="x" style="width:14px; height:14px;"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+            } else {
+                html += `<td style="text-align:center;"><span class="empty-cell">-</span></td>`;
+            }
+        });
+        html += `</tr>`;
     });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    els.subjTableContainer.innerHTML = html;
+    
+    // Refresh icons since we added new ones
+    if(window.lucide) {
+        setTimeout(() => lucide.createIcons(), 0);
+    }
 }
 
 // --- Teacher Rules ---
@@ -342,6 +567,14 @@ function updatePrefSubjectSelect() {
     if (subjects.includes(currentVal)) els.prefSubject.value = currentVal;
 }
 
+function updatePrefTeacherSelect() {
+    const teachers = Array.from(new Set(state.teacherRules.map(t => t.name)));
+    const currentVal = els.prefTeacher.value;
+    els.prefTeacher.innerHTML = '<option value="">-- Any / Select --</option>' + 
+        teachers.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (teachers.includes(currentVal)) els.prefTeacher.value = currentVal;
+}
+
 function updatePrefPeriodOptions() {
     const count = parseInt(state.settings.periods) || 8;
     const currentVal = els.prefPeriodSelect.value;
@@ -387,19 +620,35 @@ function savePreference() {
     const subj = els.prefSubject.value;
     const type = els.prefType.value;
     const day = els.prefDay.value;
+    const teacher = els.prefTeacher.value;
     const periods = [...state.tempPrefPeriods];
+    const clubbedRaw = els.prefClubbedClasses ? els.prefClubbedClasses.value.trim() : '';
     
     if (!subj) return showToast("Select a subject first.");
-    if (type !== 'specific' && periods.length === 0) return showToast("Add at least one period.");
-    if (type === 'specific' && (day === 'any' || periods.length !== 1)) return showToast("Select a specific Day and exactly ONE Period.");
     
-    state.preferences.push({
-        id: Date.now(),
-        subj, type, day, periods
-    });
+    if (type === 'clubbed') {
+        if (!teacher) return showToast("Select a teacher for clubbed classes.");
+        if (!clubbedRaw) return showToast("Enter clubbed classes.");
+        const clubbedClasses = clubbedRaw.split(',').map(s => s.trim()).filter(s => s);
+        if (clubbedClasses.length < 2) return showToast("Enter at least 2 classes for clubbing.");
+        
+        state.preferences.push({
+            id: Date.now(),
+            subj, type, teacher, clubbedClasses
+        });
+    } else {
+        if (type !== 'specific' && periods.length === 0) return showToast("Add at least one period.");
+        if (type === 'specific' && (day === 'any' || periods.length !== 1)) return showToast("Select a specific Day and exactly ONE Period.");
+        
+        state.preferences.push({
+            id: Date.now(),
+            subj, type, day, periods
+        });
+    }
     
     save();
     state.tempPrefPeriods = [];
+    if (els.prefClubbedClasses) els.prefClubbedClasses.value = '';
     showToast(`Rule for ${subj} saved!`, 'success');
     renderAll();
 }
@@ -418,6 +667,7 @@ function renderPreferences() {
         li.className = 'data-card';
         let detail = '';
         if (p.type === 'specific') detail = `Specific: ${p.day} Period ${p.periods[0]}`;
+        else if (p.type === 'clubbed') detail = `Clubbed: ${p.clubbedClasses.join(', ')} (by ${p.teacher})`;
         else detail = `${p.type.replace('_',' ').toUpperCase()} in periods: ${p.periods.join(', ')} (${p.day})`;
         
         li.innerHTML = `
@@ -452,12 +702,36 @@ function renderTeachers() {
 
 function renderSummaryTable() {
     if (!els.summaryContainer) return;
+
+    let classesSet = new Set();
+    state.subjectRules.forEach(r => classesSet.add(r.std));
+    const classCount = classesSet.size;
+    const classesList = Array.from(classesSet).sort().join(', ');
+    const periodsPerDay = state.settings.periods || 8;
+    const weeklyPeriods = periodsPerDay * 5;
+    const totalPeriods = weeklyPeriods * classCount;
+    const allottedPeriods = state.subjectRules.reduce((sum, r) => sum + r.periods, 0);
+    const periodsLeft = totalPeriods - allottedPeriods;
+
+    let calculationHtml = `
+        <div class="summary-widget card" style="margin-bottom: 1.5rem;">
+            <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">Total Periods</h3>
+            <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem;">
+                <li><strong>Total Period in a week:</strong> ${periodsPerDay} x 5 = ${weeklyPeriods}</li>
+                <li><strong>CLASSES:</strong> ${classesList || 'None'} - ${classCount}</li>
+                <li><strong>Total period:</strong> ${weeklyPeriods} x ${classCount} = ${totalPeriods}</li>
+                <li><strong>Alloted period:</strong> ${allottedPeriods}</li>
+                <li><strong>No of period left:</strong> ${periodsLeft}</li>
+            </ul>
+        </div>
+    `;
+
     if (state.teacherRules.length === 0) {
-        els.summaryContainer.innerHTML = '';
+        els.summaryContainer.innerHTML = calculationHtml;
         return;
     }
     
-    let html = `
+    let html = calculationHtml + `
         <div class="summary-widget card">
             <h3>Teacher Workload</h3>
             <table class="summary-table">
@@ -518,11 +792,14 @@ function updateOutputSelects() {
     
     let teachers = new Set(state.teacherRules.map(t => t.name));
     
-    els.outClassSelect.innerHTML = '<option value="">-- Select --</option>' + 
-        Array.from(classes).map(c => `<option value="${c}">${c}</option>`).join('');
+    const sortedClasses = Array.from(classes).sort();
+    const sortedTeachers = Array.from(teachers).sort();
+    
+    els.outClassSelect.innerHTML = '<option value="">-- Select --</option><option value="ALL_CLASSES">ALL CLASSES</option>' + 
+        sortedClasses.map(c => `<option value="${c}">${c}</option>`).join('');
         
-    els.outTeacherSelect.innerHTML = '<option value="">-- Select --</option>' + 
-        Array.from(teachers).map(t => `<option value="${t}">${t}</option>`).join('');
+    els.outTeacherSelect.innerHTML = '<option value="">-- Select --</option><option value="ALL_TEACHERS">ALL TEACHERS</option>' + 
+        sortedTeachers.map(t => `<option value="${t}">${t}</option>`).join('');
 }
 
 
@@ -588,7 +865,8 @@ function generateTimetable() {
 
             for(let i=0; i<remaining; i++) {
                 const req = { teacher: t.name, std: c.std, subj: c.subj };
-                if (specificPref) {
+                // ONLY apply specific preference to the FIRST instance of the subject
+                if (specificPref && i === 0) {
                     specificReqs.push({ ...req, specific: specificPref });
                 } else {
                     otherReqs.push(req);
@@ -599,13 +877,24 @@ function generateTimetable() {
 
     // Helper to place a requirement
     const tryPlace = (req, useSpread) => {
-        const rules = state.preferences.filter(p => p.subj === req.subj && p.type !== 'specific');
-        for(let day of days) {
+        const rules = state.preferences.filter(p => p.subj === req.subj && p.type !== 'specific' && p.type !== 'clubbed');
+        const shuffledDays = shuffleArray([...days]);
+        
+        const stdsToCheck = req.isClubbed ? req.stds : [req.std];
+        
+        for(let day of shuffledDays) {
             if (useSpread) {
-                const alreadyHasSubj = Object.values(masterGrid[req.std][day]).some(val => val.startsWith(req.subj));
+                const alreadyHasSubj = stdsToCheck.some(std => 
+                    Object.values(masterGrid[std][day]).some(val => val.startsWith(req.subj))
+                );
                 if (alreadyHasSubj) continue;
             }
-            for(let p=1; p<=state.settings.periods; p++) {
+
+            const periods = [];
+            for(let i=1; i<=state.settings.periods; i++) periods.push(i);
+            shuffleArray(periods);
+
+            for(let p of periods) {
                 // Check general rules
                 let isAllowed = true;
                 rules.forEach(rule => {
@@ -615,9 +904,19 @@ function generateTimetable() {
                 });
                 if (!isAllowed) continue;
 
-                if(!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
-                    masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
-                    teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+                // Check if ALL classes are free and teacher is free
+                const allClassesFree = stdsToCheck.every(std => !masterGrid[std][day][p]);
+                
+                if(allClassesFree && !teacherGrid[req.teacher][day][p]) {
+                    stdsToCheck.forEach(std => {
+                        masterGrid[std][day][p] = `${req.subj} (${req.teacher})`;
+                    });
+                    
+                    if (req.isClubbed) {
+                        teacherGrid[req.teacher][day][p] = `${req.stds.join(', ')} (${req.subj})`;
+                    } else {
+                        teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+                    }
                     return true;
                 }
             }
@@ -638,10 +937,58 @@ function generateTimetable() {
         }
     });
 
+    // Pass 0.5: Group Clubbed Classes
+    let clubbedReqs = [];
+    let clubbedRules = state.preferences.filter(p => p.type === 'clubbed');
+    
+    clubbedRules.forEach(rule => {
+        let matchingReqsByStd = {};
+        rule.clubbedClasses.forEach(std => matchingReqsByStd[std] = []);
+        
+        let remainingOtherReqs = [];
+        otherReqs.forEach(req => {
+            if (req.teacher === rule.teacher && req.subj === rule.subj && rule.clubbedClasses.includes(req.std)) {
+                matchingReqsByStd[req.std].push(req);
+            } else {
+                remainingOtherReqs.push(req);
+            }
+        });
+        otherReqs = remainingOtherReqs;
+        
+        let counts = rule.clubbedClasses.map(std => matchingReqsByStd[std] ? matchingReqsByStd[std].length : 0);
+        let minCount = Math.min(...counts);
+        
+        if (minCount > 0) {
+            for (let i = 0; i < minCount; i++) {
+                clubbedReqs.push({
+                    isClubbed: true,
+                    teacher: rule.teacher,
+                    subj: rule.subj,
+                    stds: rule.clubbedClasses
+                });
+                rule.clubbedClasses.forEach(std => matchingReqsByStd[std].pop());
+            }
+        }
+        
+        rule.clubbedClasses.forEach(std => {
+            if(matchingReqsByStd[std]) otherReqs.push(...matchingReqsByStd[std]);
+        });
+    });
+
+    // Place Clubbed Reqs First
+    clubbedReqs.forEach(req => {
+        if (!tryPlace(req, true)) {
+            tryPlace(req, false);
+        }
+    });
+
     // 2. Split otherReqs into Pass 1 (Spread) and Pass 2 (Overflow)
     let spreadReqs = [];
     let overflowReqs = [];
     let tripleCounts = {}; // Track how many of this triple we are trying to place
+
+    // SHUFFLE otherReqs first for randomized distribution
+    shuffleArray(otherReqs);
 
     otherReqs.forEach(req => {
         let key = `${req.teacher}_${req.std}_${req.subj}`;
@@ -693,12 +1040,87 @@ function exportPDF(type) {
     if (type === 'class') {
         const cls = els.outClassSelect.value;
         if(!cls) return showToast("Select a class first!");
-        docs.push(createPDFDoc(cls, 'Class', masterGrid[cls], days));
+        
+        if (cls === 'ALL_CLASSES') {
+            const doc = new jsPDF('l', 'mm', 'a4');
+            const schoolName = state.settings.schoolName || 'School';
+            const year = state.settings.year || 'Export';
+            
+            classes.sort().forEach((c, index) => {
+                if (index > 0) doc.addPage();
+                doc.setFontSize(22);
+                doc.text(schoolName, 14, 20);
+                doc.setFontSize(16);
+                doc.text(`Class: ${c} | Year: ${year}`, 14, 30);
+                
+                let headRow = ['Day'];
+                for(let p=1; p<=state.settings.periods; p++) {
+                    headRow.push(`Period ${p}`);
+                }
+                let body = [];
+                days.forEach(day => {
+                    let row = [day.substring(0, 3)];
+                    for(let p=1; p<=state.settings.periods; p++) {
+                        row.push(masterGrid[c][day][p] || '-');
+                    }
+                    body.push(row);
+                });
+                doc.autoTable({
+                    startY: 40,
+                    head: [headRow],
+                    body: body,
+                    theme: 'grid',
+                    headStyles: { fillColor: [249, 115, 22] },
+                    styles: { fontSize: 10, cellPadding: 4, halign: 'center' }
+                });
+            });
+            docs.push(doc);
+        } else {
+            docs.push(createPDFDoc(cls, 'Class', masterGrid[cls], days));
+        }
     } 
     else if (type === 'teacher') {
         const tchr = els.outTeacherSelect.value;
         if(!tchr) return showToast("Select a teacher first!");
-        docs.push(createPDFDoc(tchr, 'Teacher', teacherGrid[tchr], days));
+        
+        if (tchr === 'ALL_TEACHERS') {
+            const doc = new jsPDF('l', 'mm', 'a4');
+            const schoolName = state.settings.schoolName || 'School';
+            const year = state.settings.year || 'Export';
+            const sortedTeachers = Object.keys(teacherGrid).sort();
+            
+            sortedTeachers.forEach((tName, index) => {
+                if (index > 0) doc.addPage();
+                doc.setFontSize(22);
+                doc.text(schoolName, 14, 20);
+                doc.setFontSize(16);
+                doc.text(`Teacher: ${tName} | Year: ${year}`, 14, 30);
+                
+                let headRow = ['Day'];
+                for(let p=1; p<=state.settings.periods; p++) {
+                    headRow.push(`Period ${p}`);
+                }
+                let body = [];
+                days.forEach(day => {
+                    let row = [day.substring(0, 3)];
+                    for(let p=1; p<=state.settings.periods; p++) {
+                        row.push(teacherGrid[tName][day][p] || '-');
+                    }
+                    body.push(row);
+                });
+                doc.autoTable({
+                    startY: 40,
+                    head: [headRow],
+                    body: body,
+                    theme: 'grid',
+                    headStyles: { fillColor: [249, 115, 22] },
+                    styles: { fontSize: 10, cellPadding: 4, halign: 'center' }
+                });
+            });
+            docs.push(doc);
+        } else {
+            docs.push(createPDFDoc(tchr, 'Teacher', teacherGrid[tchr], days));
+        }
     }
     else if (type === 'school') {
         if(classes.length === 0) return showToast("No classes to generate!");
@@ -746,57 +1168,202 @@ function exportPDF(type) {
     }
     
     // Download individual PDF
-    docs.forEach(doc => {
-        const safeName = doc.name.replace(/[^a-z0-9]/gi, '_');
-        doc.pdf.save(`Timetable_${safeName}.pdf`);
-    });
+    if (type === 'class') {
+        const cls = els.outClassSelect.value;
+        if (cls === 'ALL_CLASSES') {
+            docs[0].save(`Timetable_All_Classes.pdf`);
+        } else {
+            const safeName = cls.replace(/[^a-z0-9]/gi, '_');
+            docs[0].save(`Timetable_Class_${safeName}.pdf`);
+        }
+    } else if (type === 'teacher') {
+        const tchr = els.outTeacherSelect.value;
+        if (tchr === 'ALL_TEACHERS') {
+            docs[0].save(`Timetable_All_Teachers.pdf`);
+        } else {
+            const safeName = tchr.replace(/[^a-z0-9]/gi, '_');
+            docs[0].save(`Timetable_Teacher_${safeName}.pdf`);
+        }
+    }
 }
 
-function createPDFDoc(name, titlePrefix, gridData, days) {
+function createPDFDoc(title, typeName, dataGrid, days) {
     const doc = new jsPDF('l', 'mm', 'a4');
-    const schoolName = state.settings.schoolName || 'School Timetable';
-    const year = state.settings.year || '2026';
+    const schoolName = state.settings.schoolName || 'School';
+    const year = state.settings.year || 'Export';
     
     doc.setFontSize(22);
     doc.text(schoolName, 14, 20);
     
     doc.setFontSize(16);
-    doc.text(`${titlePrefix}: ${name} | Year: ${year}`, 14, 30);
-    
-    const body = [];
-    days.forEach(day => {
-        let row = [day];
-        for(let p=1; p<=state.settings.periods; p++) {
-            row.push(gridData[day][p] || '-');
-        }
-        body.push(row);
-    });
+    doc.text(`${typeName}: ${title} | Year: ${year}`, 14, 30);
     
     let headRow = ['Day'];
     for(let p=1; p<=state.settings.periods; p++) {
         headRow.push(`Period ${p}`);
     }
     
+    let body = [];
+    days.forEach(day => {
+        let row = [day.substring(0, 3)];
+        for(let p=1; p<=state.settings.periods; p++) {
+            row.push(dataGrid[day][p] || '-');
+        }
+        body.push(row);
+    });
+    
     doc.autoTable({
         startY: 40,
         head: [headRow],
         body: body,
         theme: 'grid',
-        headStyles: { fillColor: [139, 92, 246] },
+        headStyles: { fillColor: [249, 115, 22] },
         styles: { fontSize: 10, cellPadding: 4, halign: 'center' }
     });
     
-    return { pdf: doc, name };
+    return doc;
+}
+
+// --- Timetable Preview ---
+function showPreview(type) {
+    const { masterGrid, teacherGrid, days, classes } = generateTimetable();
+    const periods = state.settings.periods || 8;
+    
+    let html = '';
+    let title = '';
+    
+    if (type === 'class') {
+        const cls = els.outClassSelect.value;
+        if(!cls) return showToast("Select a class first!");
+        
+        if (cls === 'ALL_CLASSES') {
+            title = `All Classes Timetables`;
+            html = '';
+            classes.sort().forEach(c => {
+                html += `<h3 style="margin: 1.5rem 0 1rem; color: var(--primary);">Class ${c}</h3>`;
+                html += `<table class="preview-table">
+                    <thead>
+                        <tr>
+                            <th>Day</th>
+                            ${Array.from({length: periods}, (_, i) => `<th>Period ${i+1}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                days.forEach(day => {
+                    html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
+                    for(let p=1; p<=periods; p++) {
+                        html += `<td>${masterGrid[c][day][p] || '-'}</td>`;
+                    }
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+            });
+        } else {
+            title = `Class ${cls} Timetable`;
+            
+            html = `<table class="preview-table">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        ${Array.from({length: periods}, (_, i) => `<th>Period ${i+1}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>`;
+                
+            days.forEach(day => {
+                html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
+                for(let p=1; p<=periods; p++) {
+                    html += `<td>${masterGrid[cls][day][p] || '-'}</td>`;
+                }
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+    } 
+    else if (type === 'teacher') {
+        const tchr = els.outTeacherSelect.value;
+        if(!tchr) return showToast("Select a teacher first!");
+        
+        if (tchr === 'ALL_TEACHERS') {
+            title = `All Teachers Timetables`;
+            html = '';
+            const sortedTeachers = Object.keys(teacherGrid).sort();
+            sortedTeachers.forEach(tName => {
+                html += `<h3 style="margin: 1.5rem 0 1rem; color: var(--primary);">Teacher ${tName}</h3>`;
+                html += `<table class="preview-table">
+                    <thead>
+                        <tr>
+                            <th>Day</th>
+                            ${Array.from({length: periods}, (_, i) => `<th>Period ${i+1}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                days.forEach(day => {
+                    html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
+                    for(let p=1; p<=periods; p++) {
+                        html += `<td>${teacherGrid[tName][day][p] || '-'}</td>`;
+                    }
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+            });
+        } else {
+            title = `Teacher ${tchr} Timetable`;
+            
+            html = `<table class="preview-table">
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        ${Array.from({length: periods}, (_, i) => `<th>Period ${i+1}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>`;
+                
+            days.forEach(day => {
+                html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
+                for(let p=1; p<=periods; p++) {
+                    html += `<td>${teacherGrid[tchr][day][p] || '-'}</td>`;
+                }
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+    }
+    else if (type === 'school') {
+        if(classes.length === 0) return showToast("No classes to generate!");
+        title = `School Timetable`;
+        
+        html = '';
+        days.forEach(day => {
+            html += `<h3 style="margin: 1.5rem 0 1rem; color: var(--primary);">${day}</h3>`;
+            html += `<table class="preview-table">
+                <thead>
+                    <tr>
+                        <th>Class</th>
+                        ${Array.from({length: periods}, (_, i) => `<th>Period ${i+1}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>`;
+            
+            classes.sort().forEach(cls => {
+                html += `<tr><td><strong>${cls}</strong></td>`;
+                for(let p=1; p<=periods; p++) {
+                    html += `<td>${masterGrid[cls][day][p] || '-'}</td>`;
+                }
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+        });
+    }
+
+    if (els.previewTitle) els.previewTitle.innerText = title;
+    if (els.previewScrollContainer) els.previewScrollContainer.innerHTML = html;
+    if (els.previewModal) els.previewModal.classList.add('show');
 }
 
 
 // --- Payment Integration ---
 let pendingPaymentCallback = null;
-
-function triggerPayment(onSuccess) {
-    pendingPaymentCallback = onSuccess;
-    document.getElementById('payment-modal').classList.add('show');
-}
 
 document.getElementById('btn-cancel-payment').onclick = () => {
     document.getElementById('payment-modal').classList.remove('show');
@@ -804,12 +1371,44 @@ document.getElementById('btn-cancel-payment').onclick = () => {
 };
 
 document.getElementById('btn-confirm-payment').onclick = () => {
+    const school = (state.settings.schoolName || '').trim();
+    if (!school) {
+        showToast("Enter School Name before paying.");
+        return;
+    }
+
+    const key = `${school}_${state.userIp}`;
+    state.paymentRecords[key] = Date.now();
+    save();
+    
     document.getElementById('payment-modal').classList.remove('show');
     if (pendingPaymentCallback) {
         pendingPaymentCallback();
         pendingPaymentCallback = null;
     }
+    renderAll();
 };
+
+function triggerPayment(onSuccess) {
+    const school = (state.settings.schoolName || '').trim();
+    if (!school) {
+        showToast("Please enter School Name in Settings first.");
+        return;
+    }
+
+    const key = `${school}_${state.userIp}`;
+    const paymentTimestamp = state.paymentRecords[key];
+    const now = Date.now();
+    
+    // Check if valid payment exists (within 3 days)
+    if (paymentTimestamp && (now - paymentTimestamp) / (1000 * 60 * 60 * 24) <= 3) {
+        onSuccess();
+        return;
+    }
+
+    pendingPaymentCallback = onSuccess;
+    document.getElementById('payment-modal').classList.add('show');
+}
 
 // Boot
 init();

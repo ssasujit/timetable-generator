@@ -637,3 +637,223 @@ button {
 .data-card:hover h4 span {
     border-bottom-color: var(--primary);
 }
+
+/* Stylish Pro Subject Grid Table */
+.subject-grid-wrapper {
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    overflow-x: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+.subject-grid-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.9rem;
+}
+
+.subject-grid-table th {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--accent);
+    padding: 1rem 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid rgba(249, 115, 22, 0.3);
+    text-align: center;
+}
+
+.subject-grid-table th:first-child {
+    text-align: left;
+    border-radius: 8px 0 0 0;
+}
+.subject-grid-table th:last-child {
+    border-radius: 0 8px 0 0;
+}
+
+.subject-grid-table td {
+    padding: 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-right: 1px solid rgba(255, 255, 255, 0.02);
+    vertical-align: middle;
+    transition: all 0.2s ease;
+}
+
+.subject-grid-table tr {
+    transition: background 0.3s ease;
+}
+
+.subject-grid-table tbody tr:hover {
+    background: rgba(249, 115, 22, 0.05);
+}
+
+.subject-grid-table td:hover {
+    background: rgba(14, 165, 233, 0.05);
+}
+
+.subject-grid-table .class-name {
+    font-weight: 800;
+    color: var(--primary);
+    font-size: 1rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.subject-grid-table .period-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    min-width: 50px;
+    font-weight: 600;
+    color: white;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.subject-grid-table .period-badge:hover {
+    background: rgba(249, 115, 22, 0.15);
+    border-color: rgba(249, 115, 22, 0.3);
+    transform: scale(1.05);
+}
+
+.subject-grid-table .btn-del-cell {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    padding: 2px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.subject-grid-table .btn-del-cell:hover {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.subject-grid-table .empty-cell {
+    color: var(--text-muted);
+    opacity: 0.3;
+}
+
+/* --- Preview Modal & Anti-Screenshot --- */
+
+.preview-modal-content {
+    max-width: 90vw;
+    width: 90%;
+    max-height: 90vh;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    user-select: none; /* Prevent text selection */
+    -webkit-user-select: none;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.preview-scroll-container {
+    flex: 1;
+    overflow: auto;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0; /* Removed padding to make calculation exact */
+    position: relative;
+    max-height: 242px; /* Exactly 4 rows of 60px (1 header + 3 days) + 2px borders */
+    max-width: 602px;  /* Exactly 5 columns of 120px (1 header + 4 periods) + 2px borders */
+    margin: 0 auto;
+}
+
+/* Timetable styling inside preview */
+.preview-table {
+    border-collapse: collapse;
+    color: var(--text-main);
+    table-layout: fixed;
+}
+
+.preview-table th, .preview-table td {
+    border: 1px solid var(--border);
+    padding: 0.5rem;
+    box-sizing: border-box;
+    height: 60px; /* Explicit height to guarantee 3 rows are visible */
+    width: 120px; /* Explicit width to guarantee 4 periods are visible */
+    min-width: 120px;
+    max-width: 120px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.preview-table th {
+    background: rgba(249, 115, 22, 0.2);
+    color: var(--primary);
+    font-weight: 800;
+}
+
+.preview-table td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Watermark Overlay */
+.watermark-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none; /* Click through */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' version='1.1' height='150px' width='300px'><text transform='translate(20, 100) rotate(-30)' fill='rgba(255,255,255,0.05)' font-size='30' font-family='Arial'>PREVIEW ONLY</text></svg>");
+    z-index: 10;
+}
+
+/* Blurring utility triggered by JS */
+.blur-content {
+    filter: blur(20px);
+    opacity: 0.1;
+    transition: all 0.1s ease;
+}
+
+/* Hide on Print */
+@media print {
+    body {
+        display: none !important;
+    }
+}
+/* --- Payment Banner --- */
+.payment-banner {
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    animation: slideDown 0.5s ease forwards;
+}
+
+.payment-banner.valid {
+    background: rgba(16, 185, 129, 0.2);
+    border-left: 5px solid #10b981;
+    color: #34d399;
+}
+
+.payment-banner.expired {
+    background: rgba(239, 68, 68, 0.2);
+    border-left: 5px solid #ef4444;
+    color: #f87171;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
