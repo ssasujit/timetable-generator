@@ -14,6 +14,13 @@
 <body>
     <div id="app" class="dashboard-layout">
         <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <a href="#row-settings" class="nav-item active" data-section="row-settings"><i data-lucide="settings"></i> <span>Settings</span></a>
+                <a href="#row-subjects" class="nav-item" data-section="row-subjects"><i data-lucide="book-open"></i> <span>Subjects</span></a>
+                <a href="#row-teachers" class="nav-item" data-section="row-teachers"><i data-lucide="users"></i> <span>Teachers</span></a>
+                <a href="#row-preferences" class="nav-item" data-section="row-preferences"><i data-lucide="sliders"></i> <span>Preferred Periods</span></a>
+                <a href="#row-output" class="nav-item" data-section="row-output"><i data-lucide="calendar"></i> <span>Timetable</span></a>
+            </nav>
             <div id="teacher-summary-container"></div>
         </aside>
         
@@ -64,6 +71,12 @@
                         <h1>Master<span>Grid</span></h1>
                         <p class="tagline">the timetable generator</p>
                     </div>
+                    <button id="btn-user-guide" class="btn-guide-float">
+                        <i data-lucide="help-circle"></i> USER GUIDE
+                    </button>
+                    <button id="btn-admin-login" class="btn-guide-float" style="margin-left: 0.5rem; background: rgba(14, 165, 233, 0.1);">
+                        <i data-lucide="shield-check" style="color: var(--secondary);"></i> ADMIN
+                    </button>
                 </div>
             </header>
 
@@ -126,7 +139,39 @@
                 <div class="data-list-container" id="subject-table-container" style="overflow-x: auto; margin-top: 1rem;">
                 </div>
 
-                <!-- Row 3: Preferred Periods -->
+
+                <!-- Row 3: Teachers -->
+                <div class="section-title">
+                    <h2>TEACHERS</h2>
+                </div>
+                <section class="row card" id="row-teachers">
+                    <div class="input-group">
+                        <label>ENTER TEACHERS</label>
+                        <input type="text" id="teacher-name" placeholder="Example SKK">
+                    </div>
+                    <div class="input-group">
+                        <label>CLASS CHARGE</label>
+                        <select id="teacher-charge">
+                            <option value="">-- None --</option>
+                        </select>
+                    </div>
+                    <div class="input-group flex-2">
+                        <label>CLASSES TAKEN</label>
+                        <div class="sub-input">
+                            <input type="text" id="teacher-takes-std" placeholder="Std (7A)" list="dl-stds">
+                            <input type="text" id="teacher-takes-subj" placeholder="Sub (MALI)" list="dl-subjects">
+                            <button id="add-teacher-class" class="btn-small"><i data-lucide="plus"></i> Add</button>
+                        </div>
+                        <ul id="current-teacher-classes" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                    </div>
+                    <button id="add-teacher-rule" class="btn-primary">SAVE <i data-lucide="plus"></i></button>
+                </section>
+                <!-- Data list for teachers -->
+                <div class="data-list-container">
+                    <ul id="teacher-rule-list" class="data-cards"></ul>
+                </div>
+
+                <!-- Row 4: Preferred Periods -->
                 <div class="section-title">
                     <h2>PREFERRED PERIODS</h2>
                 </div>
@@ -183,42 +228,11 @@
                     <ul id="preference-list" class="data-cards"></ul>
                 </div>
 
-                <!-- Row 4: Teachers -->
-                <div class="section-title">
-                    <h2>TEACHERS</h2>
-                </div>
-                <section class="row card" id="row-teachers">
-                    <div class="input-group">
-                        <label>ENTER TEACHERS</label>
-                        <input type="text" id="teacher-name" placeholder="Example SKK">
-                    </div>
-                    <div class="input-group">
-                        <label>CLASS CHARGE</label>
-                        <select id="teacher-charge">
-                            <option value="">-- None --</option>
-                        </select>
-                    </div>
-                    <div class="input-group flex-2">
-                        <label>CLASSES TAKEN</label>
-                        <div class="sub-input">
-                            <input type="text" id="teacher-takes-std" placeholder="Std (7A)" list="dl-stds">
-                            <input type="text" id="teacher-takes-subj" placeholder="Sub (MALI)" list="dl-subjects">
-                            <button id="add-teacher-class" class="btn-small"><i data-lucide="plus"></i> Add</button>
-                        </div>
-                        <ul id="current-teacher-classes" class="tag-list small" style="margin-top: 0.5rem;"></ul>
-                    </div>
-                    <button id="add-teacher-rule" class="btn-primary">SAVE <i data-lucide="plus"></i></button>
-                </section>
-                <!-- Data list for teachers -->
-                <div class="data-list-container">
-                    <ul id="teacher-rule-list" class="data-cards"></ul>
-                </div>
-
                 <!-- Row 5: Output -->
                 <div class="section-title">
                     <h2>YOUR NEW TIMETABLE.</h2>
                 </div>
-                <section class="row output-row">
+                <section class="row output-row" id="row-output">
                     <div class="output-card card">
                         <label>CLASS TIME TABLE</label>
                         <select id="output-class-select">
@@ -292,6 +306,154 @@
 
     <!-- Toast Container -->
     <div id="toast-container"></div>
+
+    <!-- User Guide Modal -->
+    <div id="user-guide-modal" class="modal">
+        <div class="modal-content card guide-modal-content">
+            <div class="preview-header">
+                <h2><i data-lucide="book-open" style="color: var(--primary);"></i> USER GUIDE</h2>
+                <button id="btn-close-guide" class="btn-icon" style="width: 36px; height: 36px; border-radius: 50%;"><i data-lucide="x"></i></button>
+            </div>
+            
+            <div class="guide-scroll-container">
+                <div class="guide-section">
+                    <h3><i data-lucide="settings"></i> SETTINGS</h3>
+                    <ul>
+                        <li><strong>School Name:</strong> Enter your school's full name.</li>
+                        <li><strong>Periods:</strong> Select the number of periods (4 to 10) from the dropdown.</li>
+                        <li><strong>Year:</strong> Enter the academic year (e.g., 2025-26).</li>
+                    </ul>
+                </div>
+
+                <div class="guide-section">
+                    <h3><i data-lucide="book"></i> SUBJECTS</h3>
+                    <ul>
+                        <li><strong>Enter Subjects:</strong> Add subjects separated by commas (e.g., MALI, ENG, HIN).</li>
+                        <li><strong>Allotted Periods:</strong> Specify periods for each subject (e.g., ENG-5, HIN-3).</li>
+                        <li><strong>STD:</strong> Enter class names (e.g., 5A, 5B) or use "All" for all classes.</li>
+                        <li>Click the <i data-lucide="plus" style="width:14px; height:14px;"></i> button to save.</li>
+                    </ul>
+                </div>
+
+                <div class="guide-section">
+                    <h3><i data-lucide="users"></i> TEACHERS</h3>
+                    <ul>
+                        <li><strong>Teacher Name:</strong> Use short names for convenience (e.g., SSK, BAS).</li>
+                        <li><strong>Class Charge:</strong> Assign a class to a teacher (e.g., SSK - 5B).</li>
+                        <li><strong style="color: var(--primary);">IMPORTANT:</strong> The 1st period will automatically be assigned to the Class Teacher (e.g., SSK in 5B).</li>
+                        <li><strong>Classes Taken:</strong> For other classes, set Charge to "None", select the class/subject, click "Add", then "Save".</li>
+                    </ul>
+                </div>
+
+                <div class="guide-section">
+                    <h3><i data-lucide="sliders"></i> PREFERRED PERIODS</h3>
+                    <ul>
+                        <li>Set custom rules for specific subjects or teachers.</li>
+                        <li><strong>Example:</strong> For 'SV' subject with Teacher 'SSK', set Rule Type to 'Allowed', Day to 'Friday', and Period to '7'.</li>
+                        <li>Click "Save Rule" to apply the constraint.</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div style="margin-top: 1.5rem; text-align: center;">
+                <button id="btn-guide-got-it" class="btn-primary" style="width: 100%;">GOT IT!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="admin-login-modal" class="modal">
+        <div class="modal-content card" style="max-width: 350px;">
+            <div class="preview-header">
+                <h2><i data-lucide="lock" style="color: var(--secondary);"></i> Admin Login</h2>
+                <button id="btn-close-admin-login" class="btn-icon" style="width: 32px; height: 32px; border-radius: 50%;"><i data-lucide="x"></i></button>
+            </div>
+            <div style="margin-top: 1.5rem; text-align: left; display: flex; flex-direction: column; gap: 1rem;">
+                <div class="input-group">
+                    <label>USERNAME</label>
+                    <input type="text" id="admin-username" placeholder="Enter username">
+                </div>
+                <div class="input-group">
+                    <label>PASSWORD</label>
+                    <input type="password" id="admin-password" placeholder="Enter password">
+                </div>
+                <button id="btn-do-login" class="btn-primary" style="width: 100%; margin-top: 0.5rem;">LOGIN</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard Modal -->
+    <div id="admin-dashboard-modal" class="modal">
+        <div class="modal-content card" style="max-width: 900px; width: 95%;">
+            <div class="preview-header">
+                <h2><i data-lucide="layout-dashboard" style="color: var(--secondary);"></i> Admin Dashboard</h2>
+                <div style="display: flex; gap: 1rem;">
+                    <button id="btn-clear-usage" class="btn-secondary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;"><i data-lucide="trash-2" style="width:14px;"></i> Clear Logs</button>
+                    <button id="btn-close-admin-dash" class="btn-icon" style="width: 36px; height: 36px; border-radius: 50%;"><i data-lucide="x"></i></button>
+                </div>
+            </div>
+            
+            <div class="guide-scroll-container" style="max-height: 70vh;">
+                <div class="admin-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="guide-section" style="margin-bottom: 0; padding: 1rem; text-align: center;">
+                        <h3 style="justify-content: center; margin-bottom: 0.5rem;"><i data-lucide="users"></i> TOTAL USERS</h3>
+                        <p id="stat-total-users" style="font-size: 2rem; font-weight: 800; color: var(--secondary);">0</p>
+                    </div>
+                    <div class="guide-section" style="margin-bottom: 0; padding: 1rem; text-align: center;">
+                        <h3 style="justify-content: center; margin-bottom: 0.5rem;"><i data-lucide="credit-card"></i> PAYMENTS</h3>
+                        <p id="stat-total-payments" style="font-size: 2rem; font-weight: 800; color: #10b981;">0</p>
+                    </div>
+                    <div class="guide-section" style="margin-bottom: 0; padding: 1rem; text-align: center;">
+                        <h3 style="justify-content: center; margin-bottom: 0.5rem;"><i data-lucide="calendar"></i> LOGS</h3>
+                        <p id="stat-total-logs" style="font-size: 2rem; font-weight: 800; color: var(--primary);">0</p>
+                    </div>
+                </div>
+
+                <div class="guide-section">
+                    <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;"><i data-lucide="list"></i> PAYMENT & USAGE RECORDS</h3>
+                    <div style="overflow-x: auto; margin-top: 1rem;">
+                        <table class="summary-table admin-table">
+                            <thead>
+                                <tr>
+                                    <th>DATE</th>
+                                    <th>SCHOOL / USER</th>
+                                    <th>IP ADDRESS</th>
+                                    <th>TYPE</th>
+                                    <th>STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-records-body">
+                                <!-- Records injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="guide-section" style="border-top: 2px solid var(--secondary); padding-top: 2rem;">
+                    <h3><i data-lucide="settings"></i> ADMIN SETTINGS</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-top: 1rem;">
+                        <div class="input-group">
+                            <label>CHANGE ADMIN PASSWORD</label>
+                            <div class="sub-input">
+                                <input type="password" id="new-admin-password" placeholder="New password">
+                                <button onclick="changeAdminPassword()" class="btn-primary" style="height: 45px;">Update</button>
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label>ADMIN IP EXEMPTION</label>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">Current IP: <strong id="admin-current-ip" style="color: var(--secondary);">Detecting...</strong></p>
+                            <button id="btn-toggle-admin-ip" onclick="toggleAdminIp()" class="btn-secondary" style="width: 100%; height: 45px;"></button>
+                        </div>
+                        <div class="input-group">
+                            <label>GLOBAL PAYMENT MODE</label>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">Status: <strong id="admin-payment-status" style="color: var(--secondary);">Active</strong></p>
+                            <button id="btn-toggle-payment" onclick="toggleGlobalPayment()" class="btn-secondary" style="width: 100%; height: 45px;"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
     <script>

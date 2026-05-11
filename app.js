@@ -12,6 +12,10 @@ let state = {
     tempPrefPeriods: [],
     editingTeacherId: null,
     paymentRecords: {}, // { "SchoolName_IP": timestamp }
+    usageLogs: [], // { timestamp, school, ip, type: 'preview'|'download' }
+    adminPassword: 'mastergrid2026',
+    adminIps: [], // List of IPs that skip payment
+    paymentEnabled: true, // Global toggle for payment requirement
     userIp: 'unknown'
 };
 
@@ -57,7 +61,25 @@ const els = {
     previewScrollContainer: document.getElementById('preview-scroll-container'),
     previewTitle: document.getElementById('preview-title'),
     btnClosePreview: document.getElementById('btn-close-preview'),
-    paymentBanner: document.getElementById('payment-status-banner')
+    paymentBanner: document.getElementById('payment-status-banner'),
+    
+    // User Guide
+    guideModal: document.getElementById('user-guide-modal'),
+    btnUserGuide: document.getElementById('btn-user-guide'),
+    btnCloseGuide: document.getElementById('btn-close-guide'),
+    btnGuideGotIt: document.getElementById('btn-guide-got-it'),
+    
+    // Admin
+    adminLoginModal: document.getElementById('admin-login-modal'),
+    adminDashModal: document.getElementById('admin-dashboard-modal'),
+    btnAdminLogin: document.getElementById('btn-admin-login'),
+    btnCloseAdminLogin: document.getElementById('btn-close-admin-login'),
+    btnDoLogin: document.getElementById('btn-do-login'),
+    adminUser: document.getElementById('admin-username'),
+    adminPass: document.getElementById('admin-password'),
+    adminRecordsBody: document.getElementById('admin-records-body'),
+    btnCloseAdminDash: document.getElementById('btn-close-admin-dash'),
+    btnClearUsage: document.getElementById('btn-clear-usage')
 };
 
 function init() {
@@ -71,6 +93,10 @@ function init() {
             state.preferences = state.preferences || [];
             state.settings = state.settings || { periods: 8, schoolName: '', year: '' };
             state.paymentRecords = state.paymentRecords || {};
+            state.usageLogs = state.usageLogs || [];
+            state.adminPassword = state.adminPassword || 'mastergrid2026';
+            state.adminIps = state.adminIps || [];
+            state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : true;
             
             // reset temp on load
             state.tempTeacherClasses = [];
@@ -130,9 +156,218 @@ function init() {
         };
     }
 
+    if (els.btnUserGuide) {
+        els.btnUserGuide.onclick = (e) => {
+            e.preventDefault();
+            els.guideModal.classList.add('show');
+        };
+    }
+
+    if (els.btnCloseGuide) {
+        els.btnCloseGuide.onclick = () => els.guideModal.classList.remove('show');
+    }
+
+    if (els.btnGuideGotIt) {
+        els.btnGuideGotIt.onclick = () => els.guideModal.classList.remove('show');
+    }
+
+    // Admin listeners
+    if (els.btnAdminLogin) {
+        els.btnAdminLogin.onclick = () => els.adminLoginModal.classList.add('show');
+    }
+    if (els.btnCloseAdminLogin) {
+        els.btnCloseAdminLogin.onclick = () => els.adminLoginModal.classList.remove('show');
+    }
+    if (els.btnDoLogin) {
+        els.btnDoLogin.onclick = handleAdminLogin;
+    }
+    if (els.btnCloseAdminDash) {
+        els.btnCloseAdminDash.onclick = () => els.adminDashModal.classList.remove('show');
+    }
+    if (els.btnClearUsage) {
+        els.btnClearUsage.onclick = () => {
+            if(confirm("Clear all usage logs?")) {
+                state.usageLogs = [];
+                save();
+                renderAdminDashboard();
+            }
+        };
+    }
+
     setupAntiScreenshot();
     fetchUserIp();
+    setupNavigation();
     renderAll();
+}
+
+function setupNavigation() {
+    const navItems = document.querySelectorAll('.nav-item');
+    const sections = Array.from(navItems).map(item => document.getElementById(item.dataset.section));
+
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const sectionId = item.dataset.section;
+            const section = document.getElementById(sectionId);
+            if (section) {
+                section.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+
+    window.addEventListener('scroll', () => {
+        let currentSectionId = '';
+        sections.forEach(section => {
+            if (!section) return;
+            const sectionTop = section.offsetTop;
+            const sectionHeight = section.clientHeight;
+            if (window.pageYOffset >= sectionTop - 150) {
+                currentSectionId = section.id;
+            }
+        });
+
+        navItems.forEach(item => {
+            item.classList.remove('active');
+            if (item.dataset.section === currentSectionId) {
+                item.classList.add('active');
+            }
+        });
+    });
+}
+
+function handleAdminLogin() {
+    const user = els.adminUser.value.trim();
+    const pass = els.adminPass.value.trim();
+    
+    if (user === 'admin' && pass === state.adminPassword) {
+        els.adminLoginModal.classList.remove('show');
+        els.adminDashModal.classList.add('show');
+        els.adminUser.value = '';
+        els.adminPass.value = '';
+        renderAdminDashboard();
+        showToast("Welcome Admin!", "success");
+    } else {
+        showToast("Invalid Credentials");
+    }
+}
+
+function changeAdminPassword() {
+    const newPass = document.getElementById('new-admin-password').value.trim();
+    if (newPass.length < 4) {
+        showToast("Password must be at least 4 characters.");
+        return;
+    }
+    state.adminPassword = newPass;
+    save();
+    showToast("Admin password updated successfully!", "success");
+    document.getElementById('new-admin-password').value = '';
+}
+
+function toggleAdminIp() {
+    const ip = state.userIp;
+    if (!ip || ip === 'unknown') return showToast("IP not detected yet.");
+    
+    state.adminIps = state.adminIps || [];
+    const index = state.adminIps.indexOf(ip);
+    
+    if (index === -1) {
+        state.adminIps.push(ip);
+        showToast(`IP ${ip} added to Trusted Admin list (Skip Payment).`, "success");
+    } else {
+        state.adminIps.splice(index, 1);
+        showToast(`IP ${ip} removed from Trusted list.`, "success");
+    }
+    save();
+    renderAdminDashboard();
+}
+
+function toggleGlobalPayment() {
+    state.paymentEnabled = !state.paymentEnabled;
+    save();
+    showToast(`Global Payment Mode set to: ${state.paymentEnabled ? 'ENABLED' : 'DISABLED'}`, state.paymentEnabled ? 'success' : 'error');
+    renderAdminDashboard();
+}
+window.changeAdminPassword = changeAdminPassword;
+window.toggleAdminIp = toggleAdminIp;
+window.toggleGlobalPayment = toggleGlobalPayment;
+
+function logUsage(type) {
+    state.usageLogs = state.usageLogs || [];
+    state.usageLogs.push({
+        timestamp: Date.now(),
+        school: state.settings.schoolName || 'Guest',
+        ip: state.userIp,
+        type: type // 'preview', 'download', 'pdf'
+    });
+    save();
+}
+
+function renderAdminDashboard() {
+    if (!els.adminRecordsBody) return;
+    
+    const logs = state.usageLogs || [];
+    const payments = state.paymentRecords || {};
+    
+    // Stats
+    document.getElementById('stat-total-users').innerText = new Set(logs.map(l => l.ip)).size;
+    document.getElementById('stat-total-payments').innerText = Object.keys(payments).length;
+    document.getElementById('stat-total-logs').innerText = logs.length;
+    
+    // Combine logs and payments for a unified view
+    let records = logs.map(l => ({...l, isPayment: false})).reverse();
+    
+    // Add payment records as special entries
+    Object.keys(payments).forEach(key => {
+        const [school, ip] = key.split('_');
+        records.push({
+            timestamp: payments[key],
+            school: school,
+            ip: ip,
+            type: 'PAYMENT',
+            isPayment: true
+        });
+    });
+    
+    // Sort by time descending
+    records.sort((a,b) => b.timestamp - a.timestamp);
+    
+    els.adminRecordsBody.innerHTML = records.map(r => `
+        <tr>
+            <td>${new Date(r.timestamp).toLocaleString()}</td>
+            <td style="color: var(--secondary); font-weight:600;">${r.school}</td>
+            <td style="font-family: monospace; font-size: 0.8rem;">${r.ip}</td>
+            <td><span class="tag small" style="background: ${r.isPayment ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)'}">${r.type.toUpperCase()}</span></td>
+            <td>${r.isPayment ? '<span style="color: #10b981; font-weight:800;">PAID</span>' : '<span style="color: var(--text-muted);">VIEWED</span>'}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="5" style="text-align:center;">No records found</td></tr>';
+
+    // Update IP Exemption UI
+    const ipEl = document.getElementById('admin-current-ip');
+    const toggleBtn = document.getElementById('btn-toggle-admin-ip');
+    if (ipEl) ipEl.innerText = state.userIp;
+    if (toggleBtn) {
+        const isExempt = (state.adminIps || []).includes(state.userIp);
+        toggleBtn.innerHTML = isExempt ? 
+            '<i data-lucide="shield-off"></i> Untrust Current IP' : 
+            '<i data-lucide="shield-check"></i> Trust Current IP';
+        toggleBtn.style.color = isExempt ? 'var(--danger)' : 'var(--secondary)';
+        if(window.lucide) lucide.createIcons();
+    }
+
+    // Update Global Payment Toggle UI
+    const payStatusEl = document.getElementById('admin-payment-status');
+    const payToggleBtn = document.getElementById('btn-toggle-payment');
+    if (payStatusEl) {
+        payStatusEl.innerText = state.paymentEnabled ? 'REQUIRED' : 'DISABLED (Free Access)';
+        payStatusEl.style.color = state.paymentEnabled ? '#10b981' : 'var(--danger)';
+    }
+    if (payToggleBtn) {
+        payToggleBtn.innerHTML = state.paymentEnabled ? 
+            '<i data-lucide="toggle-right"></i> Disable Payments' : 
+            '<i data-lucide="toggle-left"></i> Enable Payments';
+        payToggleBtn.style.color = state.paymentEnabled ? 'var(--danger)' : '#10b981';
+        if(window.lucide) lucide.createIcons();
+    }
 }
 
 async function fetchUserIp() {
@@ -1185,6 +1420,7 @@ function exportPDF(type) {
             docs[0].save(`Timetable_Teacher_${safeName}.pdf`);
         }
     }
+    logUsage('pdf');
 }
 
 function createPDFDoc(title, typeName, dataGrid, days) {
@@ -1359,6 +1595,7 @@ function showPreview(type) {
     if (els.previewTitle) els.previewTitle.innerText = title;
     if (els.previewScrollContainer) els.previewScrollContainer.innerHTML = html;
     if (els.previewModal) els.previewModal.classList.add('show');
+    logUsage('preview');
 }
 
 
@@ -1386,6 +1623,7 @@ document.getElementById('btn-confirm-payment').onclick = () => {
         pendingPaymentCallback();
         pendingPaymentCallback = null;
     }
+    logUsage('payment');
     renderAll();
 };
 
@@ -1400,6 +1638,21 @@ function triggerPayment(onSuccess) {
     const paymentTimestamp = state.paymentRecords[key];
     const now = Date.now();
     
+    // Check if Global Payment is DISABLED
+    if (state.paymentEnabled === false) {
+        showToast("Free Access: Global payment is currently disabled.", "success");
+        onSuccess();
+        return;
+    }
+
+    // Check if IP is Admin Trusted (Fixed Admin IP)
+    const isAdminIp = (state.adminIps || []).includes(state.userIp);
+    if (isAdminIp) {
+        showToast("Admin Access: Skipping payment modal.", "success");
+        onSuccess();
+        return;
+    }
+
     // Check if valid payment exists (within 3 days)
     if (paymentTimestamp && (now - paymentTimestamp) / (1000 * 60 * 60 * 24) <= 3) {
         onSuccess();

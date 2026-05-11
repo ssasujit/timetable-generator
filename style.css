@@ -79,6 +79,61 @@ body::after {
     border-right: 1px solid var(--border);
     overflow-y: auto;
     z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.2rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid transparent;
+}
+
+.nav-item i {
+    width: 20px;
+    height: 20px;
+    opacity: 0.7;
+    transition: all 0.3s ease;
+}
+
+.nav-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    transform: translateX(5px);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-item:hover i {
+    opacity: 1;
+    color: var(--primary);
+}
+
+.nav-item.active {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(14, 165, 233, 0.1));
+    color: white;
+    border-color: rgba(249, 115, 22, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.nav-item.active i {
+    opacity: 1;
+    color: var(--primary);
 }
 
 .main-content {
@@ -146,6 +201,121 @@ h1 span {
     letter-spacing: 0.1em;
     margin-top: 0.2rem;
     text-transform: lowercase;
+}
+
+/* User Guide Button */
+.btn-guide-float {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 0.6rem 1.2rem;
+    font-size: 0.85rem;
+    border-radius: 100px;
+    margin-left: auto;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.btn-guide-float:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(249, 115, 22, 0.4);
+}
+
+.btn-guide-float i {
+    width: 18px;
+    height: 18px;
+    color: var(--primary);
+    transition: color 0.3s;
+}
+
+.btn-guide-float:hover i {
+    color: white;
+}
+
+/* Guide Modal */
+.guide-modal-content {
+    max-width: 600px;
+    text-align: left;
+}
+
+.guide-scroll-container {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 1rem;
+    margin-top: 1rem;
+}
+
+.guide-section {
+    background: rgba(15, 23, 42, 0.3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.guide-section:hover {
+    background: rgba(15, 23, 42, 0.5);
+    border-color: var(--primary);
+}
+
+.guide-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    color: var(--accent);
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    letter-spacing: 0.05em;
+}
+
+.guide-section h3 i {
+    width: 20px;
+    height: 20px;
+    color: var(--primary);
+}
+
+.guide-section ul {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.guide-section li {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    position: relative;
+    padding-left: 1.5rem;
+}
+
+.guide-section li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--primary);
+    font-weight: 800;
+}
+
+.guide-section strong {
+    color: var(--text-main);
+}
+
+/* Custom Scrollbar for Guide */
+.guide-scroll-container::-webkit-scrollbar {
+    width: 6px;
+}
+.guide-scroll-container::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 10px;
+}
+.guide-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
 }
 
 /* Cards & Layout */
@@ -498,6 +668,32 @@ button {
 
 .subject-name { color: var(--text-main); }
 .subject-periods { color: var(--text-muted); font-weight: 600; }
+
+/* Admin Dashboard Table Styles */
+.admin-table {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+}
+
+.admin-table th {
+    background: rgba(15, 23, 42, 0.6);
+    color: var(--secondary);
+    padding: 1rem;
+}
+
+.admin-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-table tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-stats-grid .guide-section h3 {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
 /* Toast Notifications */
 #toast-container {
     position: fixed;
