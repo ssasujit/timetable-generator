@@ -209,6 +209,7 @@ async function init() {
     fetchUserIp();
     setupNavigation();
     startHeartbeat();
+    setInterval(updateCountdowns, 1000);
     renderAll();
 }
 
@@ -1772,33 +1773,91 @@ function triggerPayment(onSuccess) {
         return;
     }
 
+    // Check if window is EXPIRED (already more than 3 days)
     const key = `${school}_${state.userIp}`;
     const paymentTimestamp = state.paymentRecords[key];
     const now = Date.now();
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
     
     // Check if Global Payment is DISABLED
     if (state.paymentEnabled === false) {
-        showToast("Free Access: Global payment is currently disabled.", "success");
         onSuccess();
         return;
     }
 
-    // Check if IP is Admin Trusted (Fixed Admin IP)
+    // Check if IP is Admin Trusted
     const isAdminIp = (state.adminIps || []).includes(state.userIp);
     if (isAdminIp) {
-        showToast("Admin Access: Skipping payment modal.", "success");
         onSuccess();
         return;
     }
 
     // Check if valid payment exists (within 3 days)
-    if (paymentTimestamp && (now - paymentTimestamp) / (1000 * 60 * 60 * 24) <= 3) {
+    if (paymentTimestamp && (now - paymentTimestamp) <= threeDaysMs) {
         onSuccess();
         return;
     }
 
     pendingPaymentCallback = onSuccess;
     document.getElementById('payment-modal').classList.add('show');
+}
+
+function updateCountdowns() {
+    const school = (state.settings.schoolName || '').trim();
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const updateBtn = (btnId, timerId) => {
+        const btn = document.getElementById(btnId);
+        const timer = document.getElementById(timerId);
+        if (!btn || !timer) return;
+
+        if (!school) {
+            timer.style.display = 'none';
+            return;
+        }
+
+        const key = `${school}_${state.userIp}`;
+        const pmtTime = state.paymentRecords[key];
+
+        if (state.paymentEnabled === false || (state.adminIps || []).includes(state.userIp)) {
+            timer.innerHTML = "PRO ACCESS ACTIVE";
+            timer.style.display = 'inline-block';
+            timer.style.color = '#10b981';
+            timer.style.background = 'rgba(16, 185, 129, 0.1)';
+            btn.classList.remove('btn-disabled');
+            return;
+        }
+
+        if (pmtTime) {
+            const diff = threeDaysMs - (now - pmtTime);
+            if (diff > 0) {
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const secs = Math.floor((diff % (1000 * 60)) / 1000);
+                
+                timer.innerHTML = `EXPIRES IN: ${days}d ${hours}h ${mins}m ${secs}s`;
+                timer.style.display = 'inline-block';
+                timer.style.color = 'var(--secondary)';
+                timer.style.background = 'rgba(14, 165, 233, 0.1)';
+                btn.classList.remove('btn-disabled');
+            } else {
+                timer.innerHTML = "WINDOW EXPIRED";
+                timer.style.display = 'inline-block';
+                timer.style.color = 'var(--danger)';
+                timer.style.background = 'rgba(239, 68, 68, 0.1)';
+                btn.classList.add('btn-disabled');
+            }
+        } else {
+            timer.style.display = 'none';
+            btn.classList.remove('btn-disabled');
+        }
+    };
+
+    updateBtn('btn-generate', 'countdown-generate');
+    updateBtn('btn-class-pdf', 'countdown-pdf-class');
+    updateBtn('btn-teacher-pdf', 'countdown-pdf-teacher');
 }
 
 // Boot

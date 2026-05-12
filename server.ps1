@@ -1,11 +1,33 @@
 $port = 8082
 $listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add("http://*:$port/")
-$listener.Start()
-Write-Host "--- MasterGrid Server Started ---" -ForegroundColor Green
-Write-Host "Port: $port"
-Write-Host "URL: http://*:$port/"
-Write-Host "IMPORTANT: Run as Administrator for network access."
+
+# Try to get local IP
+try {
+    $localIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPv4Address -notlike "169.*" } | Select-Object -First 1).IPAddress
+} catch {
+    $localIp = $null
+}
+
+# Add prefixes
+$listener.Prefixes.Add("http://localhost:${port}/")
+if ($localIp) {
+    try {
+        $listener.Prefixes.Add("http://${localIp}:${port}/")
+    } catch {}
+}
+
+try {
+    $listener.Start()
+    Write-Host "--- MasterGrid Server Started ---" -ForegroundColor Green
+    Write-Host "Local:  http://localhost:${port}/"
+    if ($localIp) { Write-Host "Network: http://${localIp}:${port}/" }
+    Write-Host "---------------------------------"
+} catch {
+    Write-Host "CRITICAL ERROR: Could not start server on port $port." -ForegroundColor Red
+    Write-Host "Reason: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "SOLUTION: Try running PowerShell as ADMINISTRATOR." -ForegroundColor Green
+    exit
+}
 
 $stateFile = Join-Path (Get-Location) "admin_state.json"
 if (-not (Test-Path $stateFile)) {

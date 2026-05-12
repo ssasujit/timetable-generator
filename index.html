@@ -76,12 +76,14 @@
                     <div id="file-protocol-warning" style="display:none; position:fixed; top:0; left:0; width:100%; background:var(--danger); color:white; text-align:center; padding:10px; z-index:9999; font-weight:700;">
                         ⚠️ WARNING: You opened this file directly. Please use http://localhost:8082 to enable backend features.
                     </div>
-                    <button id="btn-user-guide" class="btn-guide-float">
-                        <i data-lucide="help-circle"></i> USER GUIDE
-                    </button>
-                    <button id="btn-admin-login" class="btn-guide-float" style="margin-left: 0.5rem; background: rgba(14, 165, 233, 0.1);">
-                        <i data-lucide="shield-check" style="color: var(--secondary);"></i> ADMIN
-                    </button>
+                    <div class="header-actions">
+                        <button id="btn-user-guide" class="btn-guide-float">
+                            <i data-lucide="help-circle"></i> USER GUIDE
+                        </button>
+                        <button id="btn-admin-login" class="btn-guide-float" style="margin-left: 0.5rem; background: rgba(14, 165, 233, 0.1);">
+                            <i data-lucide="shield-check" style="color: var(--secondary);"></i> ADMIN
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -138,7 +140,12 @@
                         </datalist>
                         <input type="text" id="subject-std" placeholder="e.g. 5A or All" list="dl-stds-combo" autocomplete="off">
                     </div>
-                    <button id="add-subject-rule" class="btn-icon"><i data-lucide="plus"></i></button>
+                    <div class="actions">
+                        <button id="btn-generate" class="btn-primary" onclick="triggerPayment(generateTimetable)">
+                            <i data-lucide="zap"></i> GENERATE
+                        </button>
+                        <div id="countdown-generate" class="countdown-mini"></div>
+                    </div>
                 </section>
                 <!-- Data list for subjects -->
                 <div class="data-list-container" id="subject-table-container" style="overflow-x: auto; margin-top: 1rem;">
@@ -177,20 +184,11 @@
                 </div>
 
                 <!-- Row 4: Preferred Periods -->
-                <div class="section-title">
-                    <h2>PREFERRED PERIODS</h2>
-                </div>
                 <section class="row card" id="row-preferences">
                     <div class="input-group">
                         <label>SUBJECT</label>
                         <select id="pref-subject">
                             <option value="">-- Select --</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
-                        <label>TEACHER</label>
-                        <select id="pref-teacher">
-                            <option value="">-- Any / Select --</option>
                         </select>
                     </div>
                     <div class="input-group">
@@ -243,9 +241,10 @@
                         <select id="output-class-select">
                             <option value="">-- Select --</option>
                         </select>
-                        <div style="display:flex; gap:0.5rem; width:100%;">
+                        <div style="display:flex; gap:0.5rem; width:100%; align-items:center;">
                             <button id="btn-class-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
                             <button id="btn-class-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
+                            <div id="countdown-pdf-class" class="countdown-mini"></div>
                         </div>
                     </div>
                     <div class="output-card card">
@@ -253,9 +252,10 @@
                         <select id="output-teacher-select">
                             <option value="">-- Select --</option>
                         </select>
-                        <div style="display:flex; gap:0.5rem; width:100%;">
+                        <div style="display:flex; gap:0.5rem; width:100%; align-items:center;">
                             <button id="btn-teacher-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
                             <button id="btn-teacher-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
+                            <div id="countdown-pdf-teacher" class="countdown-mini"></div>
                         </div>
                     </div>
                     <div class="output-card card">
@@ -390,14 +390,20 @@
     <!-- Admin Dashboard Modal -->
     <div id="admin-dashboard-modal" class="modal">
         <div class="modal-content card" style="max-width: 900px; width: 95%;">
-            <div class="preview-header">
-                <h2><i data-lucide="layout-dashboard" style="color: var(--secondary);"></i> Admin Dashboard</h2>
-                <div style="display: flex; gap: 1rem; align-items: center;">
+            <div class="admin-header-pro">
+                <div class="admin-title">
+                    <i data-lucide="shield-check"></i>
+                    <h2>PRO Admin Dashboard</h2>
+                </div>
+                <div class="admin-status-group">
+                    <span id="admin-db-status" class="db-status online">SQLITE ONLINE</span>
                     <span id="admin-live-indicator" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: #10b981; font-weight: 700; background: rgba(16, 185, 129, 0.1); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3);">
                         <span class="pulse-dot"></span> LIVE
                     </span>
-                    <button id="btn-clear-usage" class="btn-secondary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;"><i data-lucide="trash-2" style="width:14px;"></i> Clear Logs</button>
-                    <button id="btn-close-admin-dash" class="btn-icon" style="width: 36px; height: 36px; border-radius: 50%;"><i data-lucide="x"></i></button>
+                    <button class="btn-icon" onclick="loadAdminStateFromServer().then(renderAdminDashboard)" title="Refresh">
+                        <i data-lucide="refresh-cw"></i>
+                    </button>
+                    <button class="btn-close" onclick="closeModal('admin-dashboard-modal')">&times;</button>
                 </div>
             </div>
             
