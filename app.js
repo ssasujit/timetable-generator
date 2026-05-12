@@ -93,11 +93,20 @@ async function init() {
         }
     }
 
+    // Check protocol
+    if (window.location.protocol === 'file:') {
+        const warn = document.getElementById('file-protocol-warning');
+        if (warn) warn.style.display = 'block';
+        console.error("Running via file:// - Backend features will be disabled.");
+    }
+
     // Load Admin State from Server (Shared)
     try {
         await loadAdminStateFromServer();
-        console.log("Initial state sync complete.");
+        updateConnectionStatus(true);
+        console.log("Initial state sync complete. Payment Enabled:", state.paymentEnabled);
     } catch (e) {
+        updateConnectionStatus(false);
         console.warn("Could not reach backend on startup. Using local state.", e);
     }
 
@@ -218,17 +227,33 @@ function startHeartbeat() {
             });
             if (response.ok) {
                 const res = await response.json();
-                if (res.yourIp && (!state.userIp || state.userIp === 'unknown')) {
+                if (res.yourIp) {
                     state.userIp = res.yourIp;
                 }
+                updateConnectionStatus(true);
+            } else {
+                updateConnectionStatus(false);
             }
         } catch (e) {
+            updateConnectionStatus(false);
             console.warn("Heartbeat failed", e);
         }
     };
     
     sendHeartbeat();
-    heartbeatInterval = setInterval(sendHeartbeat, 15000);
+    heartbeatInterval = setInterval(sendHeartbeat, 10000); // 10s for faster debug
+}
+
+function updateConnectionStatus(isConnected) {
+    const dot = document.getElementById('connection-status');
+    if (!dot) return;
+    if (isConnected) {
+        dot.style.background = '#10b981';
+        dot.style.boxShadow = '0 0 8px #10b981';
+    } else {
+        dot.style.background = '#ef4444';
+        dot.style.boxShadow = '0 0 8px #ef4444';
+    }
 }
 
 function setupNavigation() {
@@ -345,12 +370,22 @@ async function loadAdminStateFromServer() {
             state.usageLogs = serverState.usageLogs || [];
             state.paymentRecords = serverState.paymentRecords || {};
             state.adminIps = serverState.adminIps || [];
-            state.paymentEnabled = (serverState.paymentEnabled !== undefined) ? serverState.paymentEnabled : true;
+            
+            // Strictly enforce payment toggle from server
+            if (serverState.paymentEnabled !== undefined) {
+                state.paymentEnabled = (serverState.paymentEnabled === true || serverState.paymentEnabled === "true");
+            } else {
+                state.paymentEnabled = true;
+            }
+
             state.activeUsers = serverState.activeUsers || [];
-            if (serverState.yourIp && (!state.userIp || state.userIp === 'unknown')) {
+            if (serverState.yourIp) {
                 state.userIp = serverState.yourIp;
             }
             if (serverState.adminPassword) state.adminPassword = serverState.adminPassword;
+            updateConnectionStatus(true);
+        } else {
+            updateConnectionStatus(false);
         }
     } catch (e) {
         console.error("Failed to load admin state from server", e);

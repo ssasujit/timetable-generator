@@ -69,7 +69,12 @@
                     </div>
                     <div class="brand-text">
                         <h1>Master<span>Grid</span></h1>
-                        <p class="tagline">the timetable generator</p>
+                        <p class="tagline">the timetable generator 
+                            <span id="connection-status" title="Backend Connection Status" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; margin-left:5px; vertical-align:middle; box-shadow: 0 0 5px #ef4444;"></span>
+                        </p>
+                    </div>
+                    <div id="file-protocol-warning" style="display:none; position:fixed; top:0; left:0; width:100%; background:var(--danger); color:white; text-align:center; padding:10px; z-index:9999; font-weight:700;">
+                        ⚠️ WARNING: You opened this file directly. Please use http://localhost:8082 to enable backend features.
                     </div>
                     <button id="btn-user-guide" class="btn-guide-float">
                         <i data-lucide="help-circle"></i> USER GUIDE
