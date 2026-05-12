@@ -82,39 +82,34 @@ const els = {
     btnClearUsage: document.getElementById('btn-clear-usage')
 };
 
-function init() {
+async function init() {
+    // Load local state first
     const saved = localStorage.getItem('timetable_dashboard_state');
     if (saved) {
         try {
             state = JSON.parse(saved);
-            // Ensure all arrays exist for backward compatibility
-            state.subjectRules = state.subjectRules || [];
-            state.teacherRules = state.teacherRules || [];
-            state.preferences = state.preferences || [];
-            state.settings = state.settings || { periods: 8, schoolName: '', year: '' };
-            state.paymentRecords = state.paymentRecords || {};
-            state.usageLogs = state.usageLogs || [];
-            state.adminPassword = state.adminPassword || 'mastergrid2026';
-            state.adminIps = state.adminIps || [];
-            state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : true;
-            
-            // reset temp on load
-            state.tempTeacherClasses = [];
-            state.tempPrefPeriods = [];
         } catch(e) {
-            console.error("Failed to load state", e);
+            console.error("Failed to load local state", e);
         }
-    } else {
-        // First time initialization
-        state.preferences.push({
-            id: Date.now(),
-            subj: 'SV',
-            type: 'specific',
-            day: 'Friday',
-            periods: [7]
-        });
-        save();
     }
+
+    // Load Admin State from Server (Shared)
+    await loadAdminStateFromServer();
+
+    // Ensure all arrays exist for backward compatibility
+    state.subjectRules = state.subjectRules || [];
+    state.teacherRules = state.teacherRules || [];
+    state.preferences = state.preferences || [];
+    state.settings = state.settings || { periods: 8, schoolName: '', year: '' };
+    state.paymentRecords = state.paymentRecords || {};
+    state.usageLogs = state.usageLogs || [];
+    state.adminPassword = state.adminPassword || 'mastergrid2026';
+    state.adminIps = state.adminIps || [];
+    state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : true;
+    
+    // reset temp on load
+    state.tempTeacherClasses = [];
+    state.tempPrefPeriods = [];
     
     // Bind settings
     els.periods.value = state.settings.periods || 8;
@@ -185,10 +180,11 @@ function init() {
         els.btnCloseAdminDash.onclick = () => els.adminDashModal.classList.remove('show');
     }
     if (els.btnClearUsage) {
-        els.btnClearUsage.onclick = () => {
+        els.btnClearUsage.onclick = async () => {
             if(confirm("Clear all usage logs?")) {
                 state.usageLogs = [];
                 save();
+                await saveAdminStateToServer();
                 renderAdminDashboard();
             }
         };
@@ -263,7 +259,7 @@ function changeAdminPassword() {
     document.getElementById('new-admin-password').value = '';
 }
 
-function toggleAdminIp() {
+async function toggleAdminIp() {
     const ip = state.userIp;
     if (!ip || ip === 'unknown') return showToast("IP not detected yet.");
     
@@ -272,18 +268,20 @@ function toggleAdminIp() {
     
     if (index === -1) {
         state.adminIps.push(ip);
-        showToast(`IP ${ip} added to Trusted Admin list (Skip Payment).`, "success");
+        showToast(`IP ${ip} added to Trusted Admin list.`, "success");
     } else {
         state.adminIps.splice(index, 1);
         showToast(`IP ${ip} removed from Trusted list.`, "success");
     }
     save();
+    await saveAdminStateToServer();
     renderAdminDashboard();
 }
 
-function toggleGlobalPayment() {
+async function toggleGlobalPayment() {
     state.paymentEnabled = !state.paymentEnabled;
     save();
+    await saveAdminStateToServer();
     showToast(`Global Payment Mode set to: ${state.paymentEnabled ? 'ENABLED' : 'DISABLED'}`, state.paymentEnabled ? 'success' : 'error');
     renderAdminDashboard();
 }
@@ -291,7 +289,7 @@ window.changeAdminPassword = changeAdminPassword;
 window.toggleAdminIp = toggleAdminIp;
 window.toggleGlobalPayment = toggleGlobalPayment;
 
-function logUsage(type) {
+async function logUsage(type) {
     state.usageLogs = state.usageLogs || [];
     state.usageLogs.push({
         timestamp: Date.now(),
@@ -300,6 +298,43 @@ function logUsage(type) {
         type: type // 'preview', 'download', 'pdf'
     });
     save();
+    await saveAdminStateToServer();
+}
+
+async function loadAdminStateFromServer() {
+    try {
+        const response = await fetch('/api/state');
+        if (response.ok) {
+            const serverState = await response.json();
+            // Merge admin fields into current state
+            state.usageLogs = serverState.usageLogs || [];
+            state.paymentRecords = serverState.paymentRecords || {};
+            state.adminIps = serverState.adminIps || [];
+            state.paymentEnabled = (serverState.paymentEnabled !== undefined) ? serverState.paymentEnabled : true;
+            if (serverState.adminPassword) state.adminPassword = serverState.adminPassword;
+        }
+    } catch (e) {
+        console.error("Failed to load admin state from server", e);
+    }
+}
+
+async function saveAdminStateToServer() {
+    try {
+        const adminData = {
+            usageLogs: state.usageLogs,
+            paymentRecords: state.paymentRecords,
+            adminIps: state.adminIps,
+            paymentEnabled: state.paymentEnabled,
+            adminPassword: state.adminPassword
+        };
+        await fetch('/api/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(adminData)
+        });
+    } catch (e) {
+        console.error("Failed to save admin state to server", e);
+    }
 }
 
 function renderAdminDashboard() {
@@ -1607,7 +1642,7 @@ document.getElementById('btn-cancel-payment').onclick = () => {
     pendingPaymentCallback = null;
 };
 
-document.getElementById('btn-confirm-payment').onclick = () => {
+document.getElementById('btn-confirm-payment').onclick = async () => {
     const school = (state.settings.schoolName || '').trim();
     if (!school) {
         showToast("Enter School Name before paying.");
@@ -1617,13 +1652,14 @@ document.getElementById('btn-confirm-payment').onclick = () => {
     const key = `${school}_${state.userIp}`;
     state.paymentRecords[key] = Date.now();
     save();
+    await saveAdminStateToServer();
     
     document.getElementById('payment-modal').classList.remove('show');
     if (pendingPaymentCallback) {
         pendingPaymentCallback();
         pendingPaymentCallback = null;
     }
-    logUsage('payment');
+    await logUsage('payment');
     renderAll();
 };
 
