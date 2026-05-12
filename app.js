@@ -94,7 +94,12 @@ async function init() {
     }
 
     // Load Admin State from Server (Shared)
-    await loadAdminStateFromServer();
+    try {
+        await loadAdminStateFromServer();
+        console.log("Initial state sync complete.");
+    } catch (e) {
+        console.warn("Could not reach backend on startup. Using local state.", e);
+    }
 
     // Ensure all arrays exist for backward compatibility
     state.subjectRules = state.subjectRules || [];
@@ -204,13 +209,19 @@ function startHeartbeat() {
     
     const sendHeartbeat = async () => {
         try {
-            await fetch('/api/heartbeat', {
+            const response = await fetch('/api/heartbeat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     school: state.settings.schoolName || 'Guest'
                 })
             });
+            if (response.ok) {
+                const res = await response.json();
+                if (res.yourIp && (!state.userIp || state.userIp === 'unknown')) {
+                    state.userIp = res.yourIp;
+                }
+            }
         } catch (e) {
             console.warn("Heartbeat failed", e);
         }
@@ -336,6 +347,9 @@ async function loadAdminStateFromServer() {
             state.adminIps = serverState.adminIps || [];
             state.paymentEnabled = (serverState.paymentEnabled !== undefined) ? serverState.paymentEnabled : true;
             state.activeUsers = serverState.activeUsers || [];
+            if (serverState.yourIp && (!state.userIp || state.userIp === 'unknown')) {
+                state.userIp = serverState.yourIp;
+            }
             if (serverState.adminPassword) state.adminPassword = serverState.adminPassword;
         }
     } catch (e) {
@@ -352,11 +366,16 @@ async function saveAdminStateToServer() {
             paymentEnabled: state.paymentEnabled,
             adminPassword: state.adminPassword
         };
-        await fetch('/api/state', {
+        const response = await fetch('/api/state', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(adminData)
         });
+        if (response.ok) {
+            const res = await response.json();
+            if (res.yourIp) state.userIp = res.yourIp;
+            console.log("Admin state saved to server.");
+        }
     } catch (e) {
         console.error("Failed to save admin state to server", e);
     }
