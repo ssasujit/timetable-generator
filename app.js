@@ -103,6 +103,7 @@ async function init() {
     state.settings = state.settings || { periods: 8, schoolName: '', year: '' };
     state.paymentRecords = state.paymentRecords || {};
     state.usageLogs = state.usageLogs || [];
+    state.activeUsers = state.activeUsers || [];
     state.adminPassword = state.adminPassword || 'mastergrid2026';
     state.adminIps = state.adminIps || [];
     state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : true;
@@ -193,7 +194,30 @@ async function init() {
     setupAntiScreenshot();
     fetchUserIp();
     setupNavigation();
+    startHeartbeat();
     renderAll();
+}
+
+let heartbeatInterval = null;
+function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    
+    const sendHeartbeat = async () => {
+        try {
+            await fetch('/api/heartbeat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    school: state.settings.schoolName || 'Guest'
+                })
+            });
+        } catch (e) {
+            console.warn("Heartbeat failed", e);
+        }
+    };
+    
+    sendHeartbeat();
+    heartbeatInterval = setInterval(sendHeartbeat, 15000);
 }
 
 function setupNavigation() {
@@ -311,6 +335,7 @@ async function loadAdminStateFromServer() {
             state.paymentRecords = serverState.paymentRecords || {};
             state.adminIps = serverState.adminIps || [];
             state.paymentEnabled = (serverState.paymentEnabled !== undefined) ? serverState.paymentEnabled : true;
+            state.activeUsers = serverState.activeUsers || [];
             if (serverState.adminPassword) state.adminPassword = serverState.adminPassword;
         }
     } catch (e) {
@@ -342,11 +367,13 @@ function renderAdminDashboard() {
     
     const logs = state.usageLogs || [];
     const payments = state.paymentRecords || {};
+    const active = state.activeUsers || [];
     
     // Stats
     document.getElementById('stat-total-users').innerText = new Set(logs.map(l => l.ip)).size;
     document.getElementById('stat-total-payments').innerText = Object.keys(payments).length;
     document.getElementById('stat-total-logs').innerText = logs.length;
+    document.getElementById('stat-live-users').innerText = active.length;
     
     // Combine logs and payments for a unified view
     let records = logs.map(l => ({...l, isPayment: false})).reverse();
@@ -376,6 +403,19 @@ function renderAdminDashboard() {
         </tr>
     `).join('') || '<tr><td colspan="5" style="text-align:center;">No records found</td></tr>';
 
+    // Render Active Users
+    const liveBody = document.getElementById('admin-live-body');
+    if (liveBody) {
+        liveBody.innerHTML = active.map(u => `
+            <tr>
+                <td style="color: var(--secondary); font-weight:600;">${u.school}</td>
+                <td style="font-family: monospace; font-size: 0.8rem;">${u.ip}</td>
+                <td>${u.lastSeenStr}</td>
+                <td><span style="color: #10b981; font-weight:700;">● ACTIVE</span></td>
+            </tr>
+        `).join('') || '<tr><td colspan="4" style="text-align:center;">No active sessions</td></tr>';
+    }
+
     // Update IP Exemption UI
     const ipEl = document.getElementById('admin-current-ip');
     const toggleBtn = document.getElementById('btn-toggle-admin-ip');
@@ -404,6 +444,14 @@ function renderAdminDashboard() {
         if(window.lucide) lucide.createIcons();
     }
 }
+
+// Add auto-refresh for admin dashboard
+setInterval(async () => {
+    if (els.adminDashModal && els.adminDashModal.classList.contains('show')) {
+        await loadAdminStateFromServer();
+        renderAdminDashboard();
+    }
+}, 5000);
 
 async function fetchUserIp() {
     try {

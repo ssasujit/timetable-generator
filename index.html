@@ -387,7 +387,10 @@
         <div class="modal-content card" style="max-width: 900px; width: 95%;">
             <div class="preview-header">
                 <h2><i data-lucide="layout-dashboard" style="color: var(--secondary);"></i> Admin Dashboard</h2>
-                <div style="display: flex; gap: 1rem;">
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <span id="admin-live-indicator" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: #10b981; font-weight: 700; background: rgba(16, 185, 129, 0.1); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3);">
+                        <span class="pulse-dot"></span> LIVE
+                    </span>
                     <button id="btn-clear-usage" class="btn-secondary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;"><i data-lucide="trash-2" style="width:14px;"></i> Clear Logs</button>
                     <button id="btn-close-admin-dash" class="btn-icon" style="width: 36px; height: 36px; border-radius: 50%;"><i data-lucide="x"></i></button>
                 </div>
@@ -406,6 +409,29 @@
                     <div class="guide-section" style="margin-bottom: 0; padding: 1rem; text-align: center;">
                         <h3 style="justify-content: center; margin-bottom: 0.5rem;"><i data-lucide="calendar"></i> LOGS</h3>
                         <p id="stat-total-logs" style="font-size: 2rem; font-weight: 800; color: var(--primary);">0</p>
+                    </div>
+                    <div class="guide-section" style="margin-bottom: 0; padding: 1rem; text-align: center; border: 2px solid var(--secondary); background: rgba(14, 165, 233, 0.05);">
+                        <h3 style="justify-content: center; margin-bottom: 0.5rem;"><i data-lucide="activity"></i> LIVE USERS</h3>
+                        <p id="stat-live-users" style="font-size: 2rem; font-weight: 800; color: var(--secondary);">0</p>
+                    </div>
+                </div>
+
+                <div class="guide-section" style="border: 1px solid rgba(14, 165, 233, 0.3); background: rgba(14, 165, 233, 0.02);">
+                    <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; color: var(--secondary);"><i data-lucide="radio"></i> LIVE SESSIONS (Last 45s)</h3>
+                    <div style="overflow-x: auto; margin-top: 1rem;">
+                        <table class="summary-table admin-table">
+                            <thead>
+                                <tr>
+                                    <th>SCHOOL NAME</th>
+                                    <th>IP ADDRESS</th>
+                                    <th>LAST SEEN</th>
+                                    <th>STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-live-body">
+                                <!-- Live sessions injected here -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -428,6 +454,7 @@
                         </table>
                     </div>
                 </div>
+
 
                 <div class="guide-section" style="border-top: 2px solid var(--secondary); padding-top: 2rem;">
                     <h3><i data-lucide="settings"></i> ADMIN SETTINGS</h3>
