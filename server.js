@@ -131,6 +131,16 @@ app.get('/api/state', (req, res) => {
     });
 });
 
+// API: Record Payment
+app.post('/api/pay', (req, res) => {
+    const { school, ip, timestamp } = req.body;
+    const key = `${school}_${ip}`;
+    db.run("INSERT OR REPLACE INTO payments (school_ip, timestamp) VALUES (?, ?)", [key, timestamp || Date.now()], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ status: 'paid', key: key });
+    });
+});
+
 // API: Save State
 app.post('/api/state', (req, res) => {
     const data = req.body;
@@ -144,8 +154,6 @@ app.post('/api/state', (req, res) => {
         }
         
         if (data.usageLogs && data.usageLogs.length > 0) {
-            // Usually we only append new logs, but for sync we might need more logic. 
-            // For now, let's just log the latest one if it's new.
             const last = data.usageLogs[data.usageLogs.length - 1];
             db.run("INSERT INTO usage_logs (timestamp, school, ip, type) VALUES (?, ?, ?, ?)", [last.timestamp, last.school, last.ip, last.type]);
         }
@@ -156,6 +164,12 @@ app.post('/api/state', (req, res) => {
                 data.adminIps.forEach(ip => stmt.run(ip));
                 stmt.finalize();
             });
+        }
+
+        if (data.paymentRecords) {
+            const stmt = db.prepare("INSERT OR REPLACE INTO payments (school_ip, timestamp) VALUES (?, ?)");
+            Object.entries(data.paymentRecords).forEach(([k, v]) => stmt.run(k, v));
+            stmt.finalize();
         }
     });
 

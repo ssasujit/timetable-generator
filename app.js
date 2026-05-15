@@ -98,6 +98,9 @@ async function init() {
         const warn = document.getElementById('file-protocol-warning');
         if (warn) warn.style.display = 'block';
         console.error("Running via file:// - Backend features will be disabled.");
+    } else {
+        // Only show status in pro web app mode
+        document.getElementById('connection-status').style.display = 'inline-block';
     }
 
     // Load Admin State from Server (Shared)
@@ -247,14 +250,39 @@ function startHeartbeat() {
 
 function updateConnectionStatus(isConnected) {
     const dot = document.getElementById('connection-status');
+    const dbStatus = document.getElementById('admin-db-status');
     if (!dot) return;
     if (isConnected) {
         dot.style.background = '#10b981';
         dot.style.boxShadow = '0 0 8px #10b981';
+        if (dbStatus) {
+            dbStatus.innerText = "SQLITE ONLINE";
+            dbStatus.className = "db-status online";
+        }
     } else {
         dot.style.background = '#ef4444';
         dot.style.boxShadow = '0 0 8px #ef4444';
+        if (dbStatus) {
+            dbStatus.innerText = "OFFLINE";
+            dbStatus.className = "db-status offline";
+        }
     }
+}
+
+function showAutoSave() {
+    const brand = document.querySelector('.brand-text h1');
+    if (!brand) return;
+    let indicator = document.getElementById('autosave-indicator');
+    if (!indicator) {
+        indicator = document.createElement('span');
+        indicator.id = 'autosave-indicator';
+        indicator.innerHTML = '<i data-lucide="check-circle-2"></i> Saved';
+        indicator.style.cssText = 'font-size: 0.6rem; color: #10b981; margin-left: 10px; opacity: 0; transition: opacity 0.3s; font-weight: 400;';
+        brand.appendChild(indicator);
+        if(window.lucide) lucide.createIcons();
+    }
+    indicator.style.opacity = '1';
+    setTimeout(() => { indicator.style.opacity = '0'; }, 2000);
 }
 
 function setupNavigation() {
@@ -510,13 +538,125 @@ setInterval(async () => {
 
 async function fetchUserIp() {
     try {
-        const response = await fetch('https://api.ipify.org?format=json');
+        const response = await fetch('/api/heartbeat', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ school: state.settings.schoolName || 'Guest' })
+        });
         const data = await response.json();
-        state.userIp = data.ip;
-        renderAll();
+        state.userIp = data.yourIp || 'unknown';
     } catch (e) {
-        console.error("Failed to fetch IP", e);
+        state.userIp = 'local';
     }
+}
+
+function renderSidebarStats() {
+    const container = document.getElementById('teacher-summary-container');
+    if (!container) return;
+    
+    const totalTeachers = state.teacherRules.length;
+    const totalSubjects = state.subjectRules.length;
+    const totalPeriods = state.subjectRules.reduce((acc, r) => acc + (r.periods || 0), 0);
+    const uniqueClasses = new Set(state.subjectRules.map(r => r.std)).size;
+    
+    container.innerHTML = `
+        <div style="border-top: 1px solid var(--border); padding-top: 1.2rem; margin-top: 0.5rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.8rem;">
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 0.6rem; text-align: center;">
+                    <div style="font-size: 1.4rem; font-weight: 800; color: var(--secondary);">${totalTeachers}</div>
+                    <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Teachers</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 0.6rem; text-align: center;">
+                    <div style="font-size: 1.4rem; font-weight: 800; color: var(--secondary);">${uniqueClasses}</div>
+                    <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Classes</div>
+                </div>
+            </div>
+            <div style="background: rgba(249, 115, 22, 0.08); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 10px; padding: 0.6rem; text-align: center; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Total Periods Assigned: </span>
+                <span style="font-size: 0.9rem; font-weight: 800; color: var(--primary);">${totalPeriods}</span>
+            </div>
+            <div class="pro-badge" style="padding: 8px; background: rgba(249, 115, 22, 0.1); border-radius: 8px; text-align: center; color: var(--primary); font-weight: 800; font-size: 0.65rem; border: 1px solid rgba(249, 115, 22, 0.2);">
+                <i data-lucide="zap" style="width: 11px; height: 11px; vertical-align: middle;"></i> PRO VERSION
+            </div>
+        </div>
+    `;
+}
+
+function renderSummaryTable() {
+    const container = document.getElementById('teacher-summary-container');
+    if (!container) return;
+    
+    // Build a workload section that will be appended after sidebar stats
+    let workloadEl = document.getElementById('teacher-workload-panel');
+    if (!workloadEl) {
+        workloadEl = document.createElement('div');
+        workloadEl.id = 'teacher-workload-panel';
+        container.appendChild(workloadEl);
+    }
+    
+    if (!state.teacherRules || state.teacherRules.length === 0) {
+        workloadEl.innerHTML = `
+            <div class="workload-section">
+                <div class="workload-title">Teacher Workload</div>
+                <div class="workload-empty">No teachers added yet.<br>Add teachers to see workload.</div>
+            </div>`;
+        return;
+    }
+    
+    // Build one card per teacher with full period breakdown
+    const rows = state.teacherRules.map(teacher => {
+        let totalPeriods = 0;
+        const lines = [];
+
+        // Class charge: 1st period is auto-assigned to class teacher
+        if (teacher.charge && teacher.charge !== '') {
+            lines.push(`
+                <div class="workload-line">
+                    <span class="wl-subject">★ Class Teacher</span>
+                    <span class="wl-class">${teacher.charge}</span>
+                    <span class="wl-periods">1 pd</span>
+                </div>`);
+            totalPeriods += 1;
+        }
+
+        // Each class-subject assignment — sum periods from subject rules
+        if (teacher.classes && teacher.classes.length > 0) {
+            teacher.classes.forEach(cls => {
+                const subjectRule = state.subjectRules.find(
+                    r => r.name === cls.subj && r.std === cls.std
+                );
+                const periods = subjectRule ? subjectRule.periods : 1;
+                totalPeriods += periods;
+                classDetails.push(`<span title="${cls.std} - ${cls.subj}: ${periods} periods">${cls.std}/${cls.subj}(${periods})</span>`);
+            });
+        }
+        
+        // Add 1 period for class charge (1st period assigned to class teacher)
+        if (teacher.charge && teacher.charge !== '') {
+            totalPeriods += 1;
+        }
+        
+        const chargeLabel = teacher.charge ? `<span style="color: var(--accent); font-size: 0.6rem; margin-left: 4px;" title="Class Teacher of ${teacher.charge}">★${teacher.charge}</span>` : '';
+        
+        return `
+            <div class="workload-row">
+                <div class="workload-teacher-name">
+                    <span>${teacher.name}${chargeLabel}</span>
+                    <span class="workload-badge">${totalPeriods} p/w</span>
+                </div>
+                <div class="workload-detail">
+                    ${classDetails.length > 0 ? classDetails.join('') : '<em style="opacity:0.5;">No classes assigned</em>'}
+                </div>
+            </div>`;
+    }).join('');
+    
+    workloadEl.innerHTML = `
+        <div class="workload-section">
+            <div class="workload-title">Teacher Workload</div>
+            ${rows}
+        </div>`;
+    
+    if (window.lucide) lucide.createIcons();
 }
 
 function setupAntiScreenshot() {
@@ -550,6 +690,7 @@ function updateSetting(key, val) {
 
 function save() {
     localStorage.setItem('timetable_dashboard_state', JSON.stringify(state));
+    showAutoSave();
 }
 
 function shuffleArray(array) {
@@ -587,6 +728,7 @@ function renderAll() {
         updatePrefTeacherSelect();
         updatePrefPeriodOptions();
         updateDataLists();
+        renderSidebarStats();
         renderSummaryTable();
         checkPaymentStatus();
         if(window.lucide) lucide.createIcons();
@@ -1015,7 +1157,7 @@ function savePreference() {
         
         state.preferences.push({
             id: Date.now(),
-            subj, type, day, periods
+            subj, type, day, periods, teacher
         });
     }
     
@@ -1038,19 +1180,48 @@ function renderPreferences() {
     state.preferences.forEach(p => {
         const li = document.createElement('li');
         li.className = 'data-card';
-        let detail = '';
-        if (p.type === 'specific') detail = `Specific: ${p.day} Period ${p.periods[0]}`;
-        else if (p.type === 'clubbed') detail = `Clubbed: ${p.clubbedClasses.join(', ')} (by ${p.teacher})`;
-        else detail = `${p.type.replace('_',' ').toUpperCase()} in periods: ${p.periods.join(', ')} (${p.day})`;
+        const teacherText = p.teacher ? `<span style="color:var(--secondary); font-weight:700;">[${p.teacher}]</span>` : '';
         
-        li.innerHTML = `
-            <h4>${p.subj} <button class="btn-del" onclick="removePreference(${p.id})"><i data-lucide="trash-2" style="width:16px;"></i></button></h4>
-            <p>${detail}</p>
-        `;
+        if (p.type === 'clubbed') {
+            li.innerHTML = `
+                <div class="card-info">
+                    <strong>${p.subj} ${teacherText}</strong>
+                    <p>CLUBBED: ${p.clubbedClasses.join(', ')}</p>
+                </div>
+                <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
+            `;
+        } else {
+            const periodsText = p.periods.map(num => `P${num}`).join(', ');
+            li.innerHTML = `
+                <div class="card-info">
+                    <strong>${p.subj} ${teacherText}</strong>
+                    <p>${p.type.toUpperCase()} on ${p.day.toUpperCase()} (${periodsText})</p>
+                </div>
+                <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
+            `;
+        }
         els.preferenceList.appendChild(li);
     });
 }
 
+
+function getTeacherWorkload(teacherName) {
+    let total = 0;
+    const rules = state.teacherRules.find(t => t.name === teacherName);
+    if (!rules) return 0;
+    
+    rules.classes.forEach(c => {
+        const subRule = state.subjectRules.find(r => r.std === c.std && r.name === c.subj);
+        if (subRule) total += subRule.periods;
+    });
+    
+    // Add class charge period (1st period) if it exists
+    if (rules.charge) {
+        total += 1; // 1st period is always for class charge
+    }
+    
+    return total;
+}
 
 function renderTeachers() {
     els.teacherList.innerHTML = '';
@@ -1059,15 +1230,20 @@ function renderTeachers() {
         li.className = 'data-card';
         const classesTxt = t.classes.map(c => `${c.std}-${c.subj}`).join(', ') || 'None';
         
+        const workload = getTeacherWorkload(t.name);
         li.innerHTML = `
-            <h4>${t.name} 
-                <div class="actions">
-                    <button class="btn-edit" onclick="editTeacher(${t.id})"><i data-lucide="edit-3" style="width:16px;"></i></button>
-                    <button class="btn-del" onclick="removeTeacher(${t.id})"><i data-lucide="trash-2" style="width:16px;"></i></button>
+            <div class="card-info">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${t.name}</strong>
+                    <span class="badge ${workload > 30 ? 'danger' : 'success'}">${workload} Periods</span>
                 </div>
-            </h4>
-            <div class="charge">Class Charge: ${t.charge || 'None'}</div>
-            <p>Classes: ${classesTxt}</p>
+                <p class="charge">Charge: ${t.charge || 'None'}</p>
+                <p class="classes-taken">${classesTxt}</p>
+            </div>
+            <div class="card-actions">
+                <button class="btn-icon" onclick="editTeacher(${t.id})"><i data-lucide="edit-2"></i></button>
+                <button class="btn-icon danger" onclick="removeTeacher(${t.id})"><i data-lucide="trash-2"></i></button>
+            </div>
         `;
         els.teacherList.appendChild(li);
     });
@@ -1234,7 +1410,12 @@ function generateTimetable() {
             let alreadyPlaced = prePlacedCounts[key] || 0;
             let remaining = pCount - alreadyPlaced;
             
-            const specificPref = state.preferences.find(p => p.subj === c.subj && p.type === 'specific');
+            // Find specific preference for this subject AND this teacher (if specified)
+            const specificPref = state.preferences.find(p => 
+                p.subj === c.subj && 
+                p.type === 'specific' && 
+                (!p.teacher || p.teacher === t.name)
+            );
 
             for(let i=0; i<remaining; i++) {
                 const req = { teacher: t.name, std: c.std, subj: c.subj };
@@ -1250,7 +1431,12 @@ function generateTimetable() {
 
     // Helper to place a requirement
     const tryPlace = (req, useSpread) => {
-        const rules = state.preferences.filter(p => p.subj === req.subj && p.type !== 'specific' && p.type !== 'clubbed');
+        const rules = state.preferences.filter(p => 
+            p.subj === req.subj && 
+            p.type !== 'specific' && 
+            p.type !== 'clubbed' &&
+            (!p.teacher || p.teacher === req.teacher)
+        );
         const shuffledDays = shuffleArray([...days]);
         
         const stdsToCheck = req.isClubbed ? req.stds : [req.std];

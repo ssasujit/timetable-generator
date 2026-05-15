@@ -80,8 +80,8 @@
                         <button id="btn-user-guide" class="btn-guide-float">
                             <i data-lucide="help-circle"></i> USER GUIDE
                         </button>
-                        <button id="btn-admin-login" class="btn-guide-float" style="margin-left: 0.5rem; background: rgba(14, 165, 233, 0.1);">
-                            <i data-lucide="shield-check" style="color: var(--secondary);"></i> ADMIN
+                        <button id="btn-admin-login" class="btn-guide-float admin-btn">
+                            <i data-lucide="shield-check"></i> ADMIN
                         </button>
                     </div>
                 </div>
@@ -90,7 +90,7 @@
             <main>
                 <!-- Row 1: Settings -->
                 <div class="section-title">
-                    <h2>SETTINGS</h2>
+                    <h2><i data-lucide="settings"></i> SETTINGS</h2>
                 </div>
                 <section class="row card" id="row-settings">
                     <div id="payment-status-banner" class="payment-banner" style="display: none; width: 100%; margin-bottom: 1.5rem; padding: 1rem; border-radius: 10px; text-align: center; font-weight: 600;"></div>
@@ -118,7 +118,7 @@
 
                 <!-- Row 2: Subjects -->
                 <div class="section-title">
-                    <h2>SUBJECTS</h2>
+                    <h2><i data-lucide="book-open"></i> SUBJECTS</h2>
                 </div>
                 <section class="row card" id="row-subjects">
                     <datalist id="dl-subjects"></datalist>
@@ -140,21 +140,14 @@
                         </datalist>
                         <input type="text" id="subject-std" placeholder="e.g. 5A or All" list="dl-stds-combo" autocomplete="off">
                     </div>
-                    <div class="actions">
-                        <button id="btn-generate" class="btn-primary" onclick="triggerPayment(generateTimetable)">
-                            <i data-lucide="zap"></i> GENERATE
-                        </button>
-                        <div id="countdown-generate" class="countdown-mini"></div>
-                    </div>
+                    <button id="add-subject-rule" class="btn-icon" style="height: 45px; width: 45px; margin-top: auto;"><i data-lucide="plus"></i></button>
                 </section>
-                <!-- Data list for subjects -->
                 <div class="data-list-container" id="subject-table-container" style="overflow-x: auto; margin-top: 1rem;">
                 </div>
 
-
                 <!-- Row 3: Teachers -->
                 <div class="section-title">
-                    <h2>TEACHERS</h2>
+                    <h2><i data-lucide="users"></i> TEACHERS</h2>
                 </div>
                 <section class="row card" id="row-teachers">
                     <div class="input-group">
@@ -176,19 +169,27 @@
                         </div>
                         <ul id="current-teacher-classes" class="tag-list small" style="margin-top: 0.5rem;"></ul>
                     </div>
-                    <button id="add-teacher-rule" class="btn-primary">SAVE <i data-lucide="plus"></i></button>
+                    <button id="add-teacher-rule" class="btn-primary" style="margin-top: auto;">SAVE <i data-lucide="plus"></i></button>
                 </section>
-                <!-- Data list for teachers -->
                 <div class="data-list-container">
                     <ul id="teacher-rule-list" class="data-cards"></ul>
                 </div>
 
                 <!-- Row 4: Preferred Periods -->
+                <div class="section-title">
+                    <h2><i data-lucide="sliders"></i> PREFERRED PERIODS</h2>
+                </div>
                 <section class="row card" id="row-preferences">
                     <div class="input-group">
                         <label>SUBJECT</label>
                         <select id="pref-subject">
                             <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>TEACHER</label>
+                        <select id="pref-teacher">
+                            <option value="">-- Any / Select --</option>
                         </select>
                     </div>
                     <div class="input-group">
@@ -225,15 +226,29 @@
                         <label>CLASSES <span style="font-size:0.7rem;opacity:0.6;">(comma separated)</span></label>
                         <input type="text" id="pref-clubbed-classes" placeholder="e.g. 5A, 5B">
                     </div>
-                    <button type="button" id="save-preference" class="btn-primary">SAVE RULE <i data-lucide="check-circle"></i></button>
+                    <button type="button" id="save-preference" class="btn-primary" style="margin-top: auto;">SAVE RULE <i data-lucide="check-circle"></i></button>
                 </section>
                 <div class="data-list-container">
                     <ul id="preference-list" class="data-cards"></ul>
                 </div>
 
+                <!-- Finalize Section -->
+                <div class="section-title">
+                    <h2><i data-lucide="zap"></i> FINALIZE</h2>
+                </div>
+                <section class="row card" style="justify-content: center; padding: 2rem;">
+                    <div style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                        <button id="btn-generate" class="btn-primary" style="font-size: 1.2rem; padding: 1rem 3rem;" onclick="triggerPayment(generateTimetable)">
+                            <i data-lucide="zap"></i> GENERATE TIMETABLE
+                        </button>
+                        <div id="countdown-generate" class="countdown-mini" style="font-size: 1rem; padding: 5px 15px;"></div>
+                        <p style="color: var(--text-muted); font-size: 0.8rem;">Click to process all rules and generate your timetable.</p>
+                    </div>
+                </section>
+
                 <!-- Row 5: Output -->
                 <div class="section-title">
-                    <h2>YOUR NEW TIMETABLE.</h2>
+                    <h2><i data-lucide="calendar"></i> YOUR NEW TIMETABLE.</h2>
                 </div>
                 <section class="row output-row" id="row-output">
                     <div class="output-card card">
@@ -244,8 +259,8 @@
                         <div style="display:flex; gap:0.5rem; width:100%; align-items:center;">
                             <button id="btn-class-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
                             <button id="btn-class-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
-                            <div id="countdown-pdf-class" class="countdown-mini"></div>
                         </div>
+                        <div id="countdown-pdf-class" class="countdown-mini"></div>
                     </div>
                     <div class="output-card card">
                         <label>TEACHERS TIMETABLE</label>
@@ -255,8 +270,8 @@
                         <div style="display:flex; gap:0.5rem; width:100%; align-items:center;">
                             <button id="btn-teacher-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
                             <button id="btn-teacher-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
-                            <div id="countdown-pdf-teacher" class="countdown-mini"></div>
                         </div>
+                        <div id="countdown-pdf-teacher" class="countdown-mini"></div>
                     </div>
                     <div class="output-card card">
                         <label>SCHOOL TIME TABLE</label>
