@@ -37,6 +37,16 @@ db.serialize(() => {
         timestamp INTEGER
     )`);
 
+    // Users Table (Persistent per device/school)
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        school TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        last_seen INTEGER,
+        created_at INTEGER,
+        UNIQUE(school, ip)
+    )`);
+
     // Trusted IPs Table
     db.run(`CREATE TABLE IF NOT EXISTS trusted_ips (
         ip TEXT PRIMARY KEY
@@ -182,19 +192,50 @@ app.post('/api/heartbeat', (req, res) => {
     const { school } = req.body;
     const schoolName = school || 'Guest';
     const key = `${ip}_${schoolName}`;
+    const now = Date.now();
 
+    // In-memory active users
     activeUsers[key] = {
         ip: ip,
         school: schoolName,
-        lastSeen: Date.now(),
+        lastSeen: now,
         lastSeenStr: new Date().toLocaleTimeString()
     };
 
-    res.json({ status: 'alive', yourIp: ip });
+    // Check if user exists, then update or insert
+    db.get("SELECT id FROM users WHERE school = ? AND ip = ?", [schoolName, ip], (err, row) => {
+        if (err) {
+            console.error("Heartbeat DB error:", err.message);
+            return res.json({ status: 'alive', yourIp: ip });
+        }
+        
+        if (row) {
+            // Update existing user
+            db.run("UPDATE users SET last_seen = ? WHERE id = ?", [now, row.id], (err) => {
+                if (err) console.error("Heartbeat DB update error:", err.message);
+            });
+        } else {
+            // Insert new user
+            db.run("INSERT INTO users (school, ip, last_seen, created_at) VALUES (?, ?, ?, ?)", 
+                   [schoolName, ip, now, now], (err) => {
+                if (err) console.error("Heartbeat DB insert error:", err.message);
+            });
+        }
+        
+        res.json({ status: 'alive', yourIp: ip });
+    });
 });
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`--- MasterGrid Pro Server Started ---`);
     console.log(`Port: ${port}`);
     console.log(`Database: SQLite (${dbPath})`);
+});
+
+// API: GetAllUsers
+app.get('/api/users', (req, res) => {
+    db.all("SELECT school, ip, last_seen, created_at FROM users ORDER BY last_seen DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ users: rows || [] });
+    });
 });

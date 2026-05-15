@@ -121,6 +121,7 @@ async function init() {
     state.paymentRecords = state.paymentRecords || {};
     state.usageLogs = state.usageLogs || [];
     state.activeUsers = state.activeUsers || [];
+    state.dbUsers = state.dbUsers || [];    // persistent DB-tracked users
     state.adminPassword = state.adminPassword || 'mastergrid2026';
     state.adminIps = state.adminIps || [];
     state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : true;
@@ -212,6 +213,8 @@ async function init() {
     fetchUserIp();
     setupNavigation();
     startHeartbeat();
+    syncDbUsers();                                       // load all persisted users
+    setInterval(syncDbUsers, 5000);                      // poll every 5 s for real-time updates
     setInterval(updateCountdowns, 1000);
     renderAll();
 }
@@ -378,6 +381,22 @@ window.changeAdminPassword = changeAdminPassword;
 window.toggleAdminIp = toggleAdminIp;
 window.toggleGlobalPayment = toggleGlobalPayment;
 
+// ─── Persistent DB Users Sync ───────────────────────────────────────────────
+async function syncDbUsers() {
+    try {
+        const response = await fetch('/api/users');
+        if (response.ok) {
+            const data = await response.json();
+            state.dbUsers = data.users || [];
+            if (els.adminDashModal && els.adminDashModal.classList.contains('show')) {
+                renderUserTable();
+            }
+        }
+    } catch (e) {
+        // Silent ignore — server may be offline
+    }
+}
+
 async function logUsage(type) {
     state.usageLogs = state.usageLogs || [];
     state.usageLogs.push({
@@ -499,6 +518,9 @@ function renderAdminDashboard() {
         `).join('') || '<tr><td colspan="4" style="text-align:center;">No active sessions</td></tr>';
     }
 
+    // Render Persistent DB Users
+    renderUserTable();
+
     // Update IP Exemption UI
     const ipEl = document.getElementById('admin-current-ip');
     const toggleBtn = document.getElementById('btn-toggle-admin-ip');
@@ -535,6 +557,43 @@ setInterval(async () => {
         renderAdminDashboard();
     }
 }, 5000);
+
+// ─── Render DB Users Table (called from renderAdminDashboard) ───────────────
+function renderUserTable() {
+    let body = document.getElementById('admin-users-body');
+    if (!body) return;
+
+    const users = state.dbUsers || [];
+    if (users.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">No users yet.</td></tr>';
+        return;
+    }
+
+    body.innerHTML = users.map(u => {
+        const lastSeenStr = u.last_seen ? new Date(Number(u.last_seen)).toLocaleString() : '—';
+        const agoStr      = u.last_seen ? timeAgo(Number(u.last_seen)) : '—';
+        return `<tr>
+            <td style="font-weight:600; color:var(--secondary);">${escHtml(u.school)}</td>
+            <td style="font-family:monospace; font-size:0.8rem;">${escHtml(u.ip)}</td>
+            <td>${lastSeenStr}<br><small style="color:var(--danger);">${agoStr}</small></td>
+            <td><span style="color:#10b981;font-weight:700;">● REGISTERED</span></td>
+        </tr>`;
+    }).join('');
+}
+
+// Helpers
+function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60)   return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+    return `${Math.floor(s/86400)}d ago`;
+}
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 async function fetchUserIp() {
     try {
@@ -603,19 +662,17 @@ function renderSummaryTable() {
         return;
     }
     
-    // Build one card per teacher with full period breakdown
+// Build one card per teacher with full period breakdown
     const rows = state.teacherRules.map(teacher => {
         let totalPeriods = 0;
-        const lines = [];
+        const classDetails = [];
 
         // Class charge: 1st period is auto-assigned to class teacher
         if (teacher.charge && teacher.charge !== '') {
-            lines.push(`
-                <div class="workload-line">
-                    <span class="wl-subject">★ Class Teacher</span>
-                    <span class="wl-class">${teacher.charge}</span>
-                    <span class="wl-periods">1 pd</span>
-                </div>`);
+            classDetails.push(`
+                <span class="wl-subject">★ Class Teacher</span>
+                <span class="wl-class">${teacher.charge}</span>
+                <span class="wl-periods">1 pd</span>`);
             totalPeriods += 1;
         }
 
@@ -630,14 +687,9 @@ function renderSummaryTable() {
                 classDetails.push(`<span title="${cls.std} - ${cls.subj}: ${periods} periods">${cls.std}/${cls.subj}(${periods})</span>`);
             });
         }
-        
-        // Add 1 period for class charge (1st period assigned to class teacher)
-        if (teacher.charge && teacher.charge !== '') {
-            totalPeriods += 1;
-        }
-        
+
         const chargeLabel = teacher.charge ? `<span style="color: var(--accent); font-size: 0.6rem; margin-left: 4px;" title="Class Teacher of ${teacher.charge}">★${teacher.charge}</span>` : '';
-        
+
         return `
             <div class="workload-row">
                 <div class="workload-teacher-name">
