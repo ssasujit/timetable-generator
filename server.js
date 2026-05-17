@@ -113,7 +113,7 @@ app.get('/api/state', (req, res) => {
         usageLogs: [],
         paymentRecords: {},
         adminIps: [],
-        paymentEnabled: true,
+        paymentEnabled: false,
         adminPassword: 'mastergrid2026',
         activeUsers: Object.values(activeUsers),
         yourIp: ip
@@ -202,27 +202,38 @@ app.post('/api/heartbeat', (req, res) => {
         lastSeenStr: new Date().toLocaleTimeString()
     };
 
-    // Check if user exists, then update or insert
-    db.get("SELECT id FROM users WHERE school = ? AND ip = ?", [schoolName, ip], (err, row) => {
-        if (err) {
-            console.error("Heartbeat DB error:", err.message);
-            return res.json({ status: 'alive', yourIp: ip });
-        }
-        
-        if (row) {
-            // Update existing user
-            db.run("UPDATE users SET last_seen = ? WHERE id = ?", [now, row.id], (err) => {
-                if (err) console.error("Heartbeat DB update error:", err.message);
+    // Get global paymentEnabled
+    db.get("SELECT value FROM admin_settings WHERE key = 'paymentEnabled'", [], (err, row) => {
+        const paymentEnabled = row ? row.value === 'true' : false;
+
+        // Get payment status for this user
+        const pkey = `${schoolName}_${ip}`;
+        db.get("SELECT timestamp FROM payments WHERE school_ip = ?", [pkey], (err, prow) => {
+            const paidTimestamp = prow ? prow.timestamp : null;
+
+            // Check if user exists, then update or insert
+            db.get("SELECT id FROM users WHERE school = ? AND ip = ?", [schoolName, ip], (err, urow) => {
+                if (err) {
+                    console.error("Heartbeat DB error:", err.message);
+                    return res.json({ status: 'alive', yourIp: ip, paymentEnabled, paidTimestamp });
+                }
+                
+                if (urow) {
+                    // Update existing user
+                    db.run("UPDATE users SET last_seen = ? WHERE id = ?", [now, urow.id], (err) => {
+                        if (err) console.error("Heartbeat DB update error:", err.message);
+                    });
+                } else {
+                    // Insert new user
+                    db.run("INSERT INTO users (school, ip, last_seen, created_at) VALUES (?, ?, ?, ?)", 
+                           [schoolName, ip, now, now], (err) => {
+                        if (err) console.error("Heartbeat DB insert error:", err.message);
+                    });
+                }
+                
+                res.json({ status: 'alive', yourIp: ip, paymentEnabled, paidTimestamp });
             });
-        } else {
-            // Insert new user
-            db.run("INSERT INTO users (school, ip, last_seen, created_at) VALUES (?, ?, ?, ?)", 
-                   [schoolName, ip, now, now], (err) => {
-                if (err) console.error("Heartbeat DB insert error:", err.message);
-            });
-        }
-        
-        res.json({ status: 'alive', yourIp: ip });
+        });
     });
 });
 

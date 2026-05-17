@@ -124,7 +124,7 @@ async function init() {
     state.dbUsers = state.dbUsers || [];    // persistent DB-tracked users
     state.adminPassword = state.adminPassword || 'mastergrid2026';
     state.adminIps = state.adminIps || [];
-    state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : true;
+    state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : false;
     
     // reset temp on load
     state.tempTeacherClasses = [];
@@ -237,6 +237,17 @@ function startHeartbeat() {
                 if (res.yourIp) {
                     state.userIp = res.yourIp;
                 }
+                if (res.paymentEnabled !== undefined) {
+                    state.paymentEnabled = res.paymentEnabled;
+                }
+                if (res.paidTimestamp) {
+                    const key = `${state.settings.schoolName || 'Guest'}_${state.userIp}`;
+                    state.paymentRecords[key] = res.paidTimestamp;
+                } else {
+                    const key = `${state.settings.schoolName || 'Guest'}_${state.userIp}`;
+                    delete state.paymentRecords[key];
+                }
+                checkPaymentStatus();
                 updateConnectionStatus(true);
             } else {
                 updateConnectionStatus(false);
@@ -408,7 +419,6 @@ async function logUsage(type) {
     save();
     await saveAdminStateToServer();
 }
-
 async function loadAdminStateFromServer() {
     try {
         const response = await fetch('/api/state');
@@ -423,7 +433,7 @@ async function loadAdminStateFromServer() {
             if (serverState.paymentEnabled !== undefined) {
                 state.paymentEnabled = (serverState.paymentEnabled === true || serverState.paymentEnabled === "true");
             } else {
-                state.paymentEnabled = true;
+                state.paymentEnabled = false;
             }
 
             state.activeUsers = serverState.activeUsers || [];
@@ -439,6 +449,7 @@ async function loadAdminStateFromServer() {
         console.error("Failed to load admin state from server", e);
     }
 }
+
 
 async function saveAdminStateToServer() {
     try {
