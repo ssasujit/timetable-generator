@@ -418,7 +418,7 @@
                     <button class="btn-icon" onclick="loadAdminStateFromServer().then(renderAdminDashboard)" title="Refresh">
                         <i data-lucide="refresh-cw"></i>
                     </button>
-                    <button class="btn-close" onclick="closeModal('admin-dashboard-modal')">&times;</button>
+                    <button id="btn-close-admin-dash" class="btn-close" title="Close">&times;</button>
                 </div>
             </div>
             
@@ -488,10 +488,11 @@
                         <table class="summary-table admin-table">
                             <thead>
                                 <tr>
-                                    <th>SCHOOL / DEVICE NAME</th>
-                                    <th>IP ADDRESS</th>
-                                    <th>LAST SEEN (DB)</th>
-                                    <th>STATUS</th>
+                                    <th>Sl.No</th>
+                                    <th>School / Organization</th>
+                                    <th>IP Address</th>
+                                    <th>Payment Toggle</th>
+                                    <th>Delete</th>
                                 </tr>
                             </thead>
                             <tbody id="admin-users-body">

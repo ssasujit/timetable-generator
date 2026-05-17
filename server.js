@@ -234,8 +234,36 @@ app.listen(port, '0.0.0.0', () => {
 
 // API: GetAllUsers
 app.get('/api/users', (req, res) => {
-    db.all("SELECT school, ip, last_seen, created_at FROM users ORDER BY last_seen DESC", [], (err, rows) => {
+    const query = `
+        SELECT u.id, u.school, u.ip, u.last_seen, u.created_at, 
+               CASE WHEN p.school_ip IS NOT NULL THEN 1 ELSE 0 END as has_paid 
+        FROM users u 
+        LEFT JOIN payments p ON p.school_ip = u.school || '_' || u.ip 
+        ORDER BY u.last_seen DESC
+    `;
+    db.all(query, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ users: rows || [] });
+    });
+});
+
+// API: Revoke Payment
+app.post('/api/unpay', (req, res) => {
+    const { school, ip } = req.body;
+    const key = `${school}_${ip}`;
+    db.run("DELETE FROM payments WHERE school_ip = ?", [key], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ status: 'unpaid', key: key });
+    });
+});
+
+// API: Delete User
+app.delete('/api/users', (req, res) => {
+    const { school, ip } = req.body;
+    db.run("DELETE FROM users WHERE school = ? AND ip = ?", [school, ip], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const key = `${school}_${ip}`;
+        db.run("DELETE FROM payments WHERE school_ip = ?", [key]);
+        res.json({ status: 'deleted' });
     });
 });

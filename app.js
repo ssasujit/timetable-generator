@@ -565,21 +565,77 @@ function renderUserTable() {
 
     const users = state.dbUsers || [];
     if (users.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">No users yet.</td></tr>';
+        body.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No users yet.</td></tr>';
         return;
     }
 
-    body.innerHTML = users.map(u => {
-        const lastSeenStr = u.last_seen ? new Date(Number(u.last_seen)).toLocaleString() : '—';
-        const agoStr      = u.last_seen ? timeAgo(Number(u.last_seen)) : '—';
+    body.innerHTML = users.map((u, i) => {
+        const isPaid = u.has_paid === 1;
+        const toggleClass = isPaid ? 'btn-secondary' : 'btn-primary';
+        const toggleText = isPaid ? 'REVOKE' : 'GRANT';
+        const toggleStyle = isPaid ? 'border-color: var(--danger); color: var(--danger);' : '';
+        
         return `<tr>
+            <td style="font-weight:600;">${i + 1}</td>
             <td style="font-weight:600; color:var(--secondary);">${escHtml(u.school)}</td>
             <td style="font-family:monospace; font-size:0.8rem;">${escHtml(u.ip)}</td>
-            <td>${lastSeenStr}<br><small style="color:var(--danger);">${agoStr}</small></td>
-            <td><span style="color:#10b981;font-weight:700;">● REGISTERED</span></td>
+            <td>
+                <button onclick="toggleUserPayment('${escHtml(u.school)}', '${escHtml(u.ip)}', ${isPaid})" class="${toggleClass}" style="padding: 5px 10px; font-size: 0.8rem; height: auto; ${toggleStyle}">
+                    ${isPaid ? 'ON' : 'OFF'} (${toggleText})
+                </button>
+            </td>
+            <td>
+                <button onclick="deleteUser('${escHtml(u.school)}', '${escHtml(u.ip)}')" class="btn-secondary" style="padding: 5px 10px; font-size: 0.8rem; height: auto; border: 1px solid var(--danger); color: var(--danger);">
+                    DELETE
+                </button>
+            </td>
         </tr>`;
     }).join('');
 }
+
+window.toggleUserPayment = async function(school, ip, isPaid) {
+    try {
+        const url = isPaid ? '/api/unpay' : '/api/pay';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ school, ip })
+        });
+        if (response.ok) {
+            showToast(`Payment ${isPaid ? 'revoked' : 'granted'} for ${school}`, "success");
+            await syncDbUsers();
+            if (els.adminDashModal && els.adminDashModal.classList.contains('show')) {
+                renderUserTable();
+            }
+        } else {
+            showToast("Failed to update payment status.");
+        }
+    } catch (e) {
+        showToast("Error updating payment.");
+    }
+};
+
+window.deleteUser = async function(school, ip) {
+    if (!confirm(`Are you sure you want to delete ${school} (${ip})?`)) return;
+    try {
+        const response = await fetch('/api/users', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ school, ip })
+        });
+        if (response.ok) {
+            showToast(`User ${school} deleted.`, "success");
+            await syncDbUsers();
+            if (els.adminDashModal && els.adminDashModal.classList.contains('show')) {
+                renderUserTable();
+            }
+        } else {
+            showToast("Failed to delete user.");
+        }
+    } catch (e) {
+        showToast("Error deleting user.");
+    }
+};
 
 // Helpers
 function timeAgo(ts) {
