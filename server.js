@@ -1,8 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const mongoose = require('mongoose');
+const os = require('os');
 
 const app = express();
 const port = 8082;
@@ -11,87 +12,146 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '.')));
 
-// Database Setup
-const dbPath = path.join(__dirname, 'mastergrid.sqlite');
-const db = new sqlite3.Database(dbPath);
-
-db.serialize(() => {
-    // Admin State Table (Global Settings)
-    db.run(`CREATE TABLE IF NOT EXISTS admin_settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )`);
-
-    // Usage Logs Table
-    db.run(`CREATE TABLE IF NOT EXISTS usage_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER,
-        school TEXT,
-        ip TEXT,
-        type TEXT
-    )`);
-
-    // Payments Table
-    db.run(`CREATE TABLE IF NOT EXISTS payments (
-        school_ip TEXT PRIMARY KEY,
-        timestamp INTEGER
-    )`);
-
-    // Users Table (Persistent per device/school)
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        school TEXT NOT NULL,
-        ip TEXT NOT NULL,
-        last_seen INTEGER,
-        created_at INTEGER,
-        UNIQUE(school, ip)
-    )`);
-
-    // Trusted IPs Table
-    db.run(`CREATE TABLE IF NOT EXISTS trusted_ips (
-        ip TEXT PRIMARY KEY
-    )`);
-
-    // Initial Migration from JSON if exists
-    const jsonPath = path.join(__dirname, 'admin_state.json');
-    if (fs.existsSync(jsonPath)) {
-        console.log("Migrating from admin_state.json...");
-        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-        
-        // Save settings
-        db.run("INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)", ['paymentEnabled', String(data.paymentEnabled)]);
-        db.run("INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)", ['adminPassword', data.adminPassword || 'mastergrid2026']);
-        
-        // Save logs
-        if (data.usageLogs) {
-            const stmt = db.prepare("INSERT INTO usage_logs (timestamp, school, ip, type) VALUES (?, ?, ?, ?)");
-            data.usageLogs.forEach(log => {
-                stmt.run(log.timestamp, log.school, log.ip, log.type);
-            });
-            stmt.finalize();
+// Helper to get local IPv4 network address
+function getLocalIp() {
+    const interfaces = os.networkInterfaces();
+    for (const name in interfaces) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
         }
-
-        // Save payments
-        if (data.paymentRecords) {
-            const stmt = db.prepare("INSERT OR REPLACE INTO payments (school_ip, timestamp) VALUES (?, ?)");
-            Object.entries(data.paymentRecords).forEach(([key, val]) => {
-                stmt.run(key, val);
-            });
-            stmt.finalize();
-        }
-
-        // Save trusted IPs
-        if (data.adminIps) {
-            const stmt = db.prepare("INSERT OR REPLACE INTO trusted_ips (ip) VALUES (?)");
-            data.adminIps.forEach(ip => stmt.run(ip));
-            stmt.finalize();
-        }
-
-        // Rename old file to backup
-        fs.renameSync(jsonPath, jsonPath + '.bak');
-        console.log("Migration complete.");
     }
+    return null;
+}
+
+// MongoDB Connection Setup
+const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mastergrid';
+console.log(`Connecting to MongoDB...`);
+mongoose.set('bufferCommands', false);
+mongoose.connect(mongoURI, { serverSelectionTimeoutMS: 3000 })
+    .then(() => {
+        console.log('MongoDB Connected Successfully!');
+        runSQLiteMigration(); // Automatic SQLite data migration
+    })
+    .catch(err => {
+        console.error('MongoDB Connection Error:', err.message);
+        console.log('Please make sure MongoDB is running locally or MONGODB_URI is correctly configured.');
+    });
+
+
+// Mongoose Schemas & Models
+const adminSettingSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: { type: String, required: true }
 });
+const AdminSetting = mongoose.model('AdminSetting', adminSettingSchema);
+
+const userLogSchema = new mongoose.Schema({
+    date: { type: String, required: true }, // Format e.g., '16.05.2026'
+    schoolName: { type: String, required: true },
+    year: { type: String, required: true },
+    ip: { type: String, required: true },
+    previews: { type: Number, default: 0 },
+    pdfs: { type: Number, default: 0 },
+    timestamp: { type: Number, required: true }
+});
+userLogSchema.index({ date: 1, schoolName: 1, year: 1, ip: 1 }, { unique: true });
+const UserLog = mongoose.model('UserLog', userLogSchema);
+
+const paymentSchema = new mongoose.Schema({
+    school_ip: { type: String, required: true, unique: true },
+    timestamp: { type: Number, required: true }
+});
+const Payment = mongoose.model('Payment', paymentSchema);
+
+const userSchema = new mongoose.Schema({
+    school: { type: String, required: true },
+    ip: { type: String, required: true },
+    last_seen: { type: Number, required: true },
+    created_at: { type: Number, required: true }
+});
+userSchema.index({ school: 1, ip: 1 }, { unique: true });
+const User = mongoose.model('User', userSchema);
+
+const trustedIpSchema = new mongoose.Schema({
+    ip: { type: String, required: true, unique: true }
+});
+const TrustedIp = mongoose.model('TrustedIp', trustedIpSchema);
+
+// SQLite Automatic Migration Helper
+function runSQLiteMigration() {
+    const dbPath = path.join(__dirname, 'mastergrid.sqlite');
+    if (!fs.existsSync(dbPath)) {
+        return; // No SQLite file to migrate
+    }
+    
+    console.log("Found mastergrid.sqlite! Initiating automatic data migration to MongoDB...");
+    try {
+        const sqlite3 = require('sqlite3').verbose();
+        const tempDb = new sqlite3.Database(dbPath);
+        
+        tempDb.serialize(() => {
+            // Migrate Admin Settings
+            tempDb.all("SELECT * FROM admin_settings", [], async (err, rows) => {
+                if (!err && rows) {
+                    for (const row of rows) {
+                        await AdminSetting.updateOne({ key: row.key }, { value: row.value }, { upsert: true });
+                    }
+                    console.log(`Migrated ${rows.length} Admin Settings.`);
+                }
+            });
+            
+            // Migrate Payments
+            tempDb.all("SELECT * FROM payments", [], async (err, rows) => {
+                if (!err && rows) {
+                    for (const row of rows) {
+                        await Payment.updateOne({ school_ip: row.school_ip }, { timestamp: row.timestamp }, { upsert: true });
+                    }
+                    console.log(`Migrated ${rows.length} Payments.`);
+                }
+            });
+            
+            // Migrate Users
+            tempDb.all("SELECT * FROM users", [], async (err, rows) => {
+                if (!err && rows) {
+                    for (const row of rows) {
+                        await User.updateOne(
+                            { school: row.school, ip: row.ip },
+                            { last_seen: row.last_seen, created_at: row.created_at },
+                            { upsert: true }
+                        );
+                    }
+                    console.log(`Migrated ${rows.length} Registered Users.`);
+                }
+            });
+            
+            // Migrate Trusted IPs
+            tempDb.all("SELECT * FROM trusted_ips", [], async (err, rows) => {
+                if (!err && rows) {
+                    for (const row of rows) {
+                        await TrustedIp.updateOne({ ip: row.ip }, {}, { upsert: true });
+                    }
+                    console.log(`Migrated ${rows.length} Trusted IPs.`);
+                }
+                
+                // Close and rename SQLite database
+                tempDb.close((closeErr) => {
+                    if (!closeErr) {
+                        try {
+                            fs.renameSync(dbPath, dbPath + '.migrated');
+                            console.log("SQLite migration fully completed and database file renamed to mastergrid.sqlite.migrated!");
+                        } catch (renameErr) {
+                            console.error("Failed to rename SQLite file:", renameErr.message);
+                        }
+                    }
+                });
+            });
+        });
+    } catch (e) {
+        console.error("Failed to perform SQLite migration. The sqlite3 dependency may not be loaded:", e.message);
+    }
+}
 
 // Live Users Tracking (In-memory)
 let activeUsers = {};
@@ -100,7 +160,7 @@ let activeUsers = {};
 const getIp = (req) => req.headers['x-forwarded-for'] || req.socket.remoteAddress.replace(/^.*:/, '');
 
 // API: Get State
-app.get('/api/state', (req, res) => {
+app.get('/api/state', async (req, res) => {
     const ip = getIp(req);
     
     // Prune active users (older than 45s)
@@ -116,165 +176,308 @@ app.get('/api/state', (req, res) => {
         paymentEnabled: false,
         adminPassword: 'mastergrid2026',
         activeUsers: Object.values(activeUsers),
-        yourIp: ip
+        yourIp: ip,
+        dbConnected: true
     };
 
-    // Load from DB
-    db.all("SELECT * FROM admin_settings", [], (err, rows) => {
-        rows.forEach(row => {
+    if (mongoose.connection.readyState !== 1) {
+        state.dbConnected = false;
+        state.dbError = "MongoDB connection not established / offline";
+        return res.json(state);
+    }
+
+    try {
+        // Load settings
+        const settings = await AdminSetting.find({});
+        settings.forEach(row => {
             if (row.key === 'paymentEnabled') state.paymentEnabled = row.value === 'true';
             if (row.key === 'adminPassword') state.adminPassword = row.value;
         });
 
-        db.all("SELECT * FROM usage_logs ORDER BY timestamp DESC LIMIT 500", [], (err, logs) => {
-            state.usageLogs = logs;
-
-            db.all("SELECT * FROM payments", [], (err, pmts) => {
-                pmts.forEach(p => state.paymentRecords[p.school_ip] = p.timestamp);
-
-                db.all("SELECT * FROM trusted_ips", [], (err, tips) => {
-                    state.adminIps = tips.map(t => t.ip);
-                    res.json(state);
-                });
-            });
+        // Load payments
+        const payments = await Payment.find({});
+        payments.forEach(p => {
+            state.paymentRecords[p.school_ip] = p.timestamp;
         });
-    });
+
+        // Load trusted IPs
+        const trustedIps = await TrustedIp.find({});
+        state.adminIps = trustedIps.map(t => t.ip);
+
+        // Load new UserLogs sorted by date/timestamp desc
+        const logs = await UserLog.find({}).sort({ timestamp: -1 }).limit(500);
+        state.usageLogs = logs.map(l => ({
+            timestamp: l.timestamp,
+            school: l.schoolName,
+            ip: l.ip,
+            type: `previews: ${l.previews}, pdfs: ${l.pdfs}`,
+            year: l.year,
+            previews: l.previews,
+            pdfs: l.pdfs,
+            date: l.date
+        }));
+
+        res.json(state);
+    } catch (err) {
+        state.dbConnected = false;
+        state.dbError = err.message;
+        res.json(state); // Return fallback state so dashboard works even if DB is offline!
+    }
 });
 
 // API: Record Payment
-app.post('/api/pay', (req, res) => {
-    const { school, ip, timestamp } = req.body;
-    const key = `${school}_${ip}`;
-    db.run("INSERT OR REPLACE INTO payments (school_ip, timestamp) VALUES (?, ?)", [key, timestamp || Date.now()], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.post('/api/pay', async (req, res) => {
+    try {
+        const { school, ip, timestamp } = req.body;
+        const key = `${school}_${ip}`;
+        await Payment.updateOne(
+            { school_ip: key },
+            { timestamp: timestamp || Date.now() },
+            { upsert: true }
+        );
         res.json({ status: 'paid', key: key });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // API: Save State
-app.post('/api/state', (req, res) => {
-    const data = req.body;
-    
-    db.serialize(() => {
+app.post('/api/state', async (req, res) => {
+    try {
+        const data = req.body;
+
         if (data.paymentEnabled !== undefined) {
-            db.run("INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)", ['paymentEnabled', String(data.paymentEnabled)]);
+            await AdminSetting.updateOne(
+                { key: 'paymentEnabled' },
+                { value: String(data.paymentEnabled) },
+                { upsert: true }
+            );
         }
         if (data.adminPassword) {
-            db.run("INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)", ['adminPassword', data.adminPassword]);
-        }
-        
-        if (data.usageLogs && data.usageLogs.length > 0) {
-            const last = data.usageLogs[data.usageLogs.length - 1];
-            db.run("INSERT INTO usage_logs (timestamp, school, ip, type) VALUES (?, ?, ?, ?)", [last.timestamp, last.school, last.ip, last.type]);
+            await AdminSetting.updateOne(
+                { key: 'adminPassword' },
+                { value: data.adminPassword },
+                { upsert: true }
+            );
         }
 
         if (data.adminIps) {
-            db.run("DELETE FROM trusted_ips", [], () => {
-                const stmt = db.prepare("INSERT INTO trusted_ips (ip) VALUES (?)");
-                data.adminIps.forEach(ip => stmt.run(ip));
-                stmt.finalize();
-            });
+            await TrustedIp.deleteMany({});
+            if (data.adminIps.length > 0) {
+                const ipsToInsert = data.adminIps.map(ip => ({ ip }));
+                await TrustedIp.insertMany(ipsToInsert);
+            }
         }
 
         if (data.paymentRecords) {
-            const stmt = db.prepare("INSERT OR REPLACE INTO payments (school_ip, timestamp) VALUES (?, ?)");
-            Object.entries(data.paymentRecords).forEach(([k, v]) => stmt.run(k, v));
-            stmt.finalize();
+            for (const [k, v] of Object.entries(data.paymentRecords)) {
+                await Payment.updateOne(
+                    { school_ip: k },
+                    { timestamp: v },
+                    { upsert: true }
+                );
+            }
         }
-    });
 
-    res.json({ status: 'ok', yourIp: getIp(req) });
+        res.json({ status: 'ok', yourIp: getIp(req) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // API: Heartbeat
-app.post('/api/heartbeat', (req, res) => {
-    const ip = getIp(req);
-    const { school } = req.body;
-    const schoolName = school || 'Guest';
-    const key = `${ip}_${schoolName}`;
-    const now = Date.now();
+app.post('/api/heartbeat', async (req, res) => {
+    try {
+        const ip = getIp(req);
+        const { school } = req.body;
+        const schoolName = school || 'Guest';
+        const key = `${ip}_${schoolName}`;
+        const now = Date.now();
 
-    // In-memory active users
-    activeUsers[key] = {
-        ip: ip,
-        school: schoolName,
-        lastSeen: now,
-        lastSeenStr: new Date().toLocaleTimeString()
-    };
+        // In-memory active users
+        activeUsers[key] = {
+            ip: ip,
+            school: schoolName,
+            lastSeen: now,
+            lastSeenStr: new Date().toLocaleTimeString()
+        };
 
-    // Get global paymentEnabled
-    db.get("SELECT value FROM admin_settings WHERE key = 'paymentEnabled'", [], (err, row) => {
-        const paymentEnabled = row ? row.value === 'true' : false;
+        // Get global paymentEnabled
+        const paymentSetting = await AdminSetting.findOne({ key: 'paymentEnabled' });
+        const paymentEnabled = paymentSetting ? paymentSetting.value === 'true' : false;
 
         // Get payment status for this user
         const pkey = `${schoolName}_${ip}`;
-        db.get("SELECT timestamp FROM payments WHERE school_ip = ?", [pkey], (err, prow) => {
-            const paidTimestamp = prow ? prow.timestamp : null;
+        const pmt = await Payment.findOne({ school_ip: pkey });
+        const paidTimestamp = pmt ? pmt.timestamp : null;
 
-            // Check if user exists, then update or insert
-            db.get("SELECT id FROM users WHERE school = ? AND ip = ?", [schoolName, ip], (err, urow) => {
-                if (err) {
-                    console.error("Heartbeat DB error:", err.message);
-                    return res.json({ status: 'alive', yourIp: ip, paymentEnabled, paidTimestamp });
-                }
-                
-                if (urow) {
-                    // Update existing user
-                    db.run("UPDATE users SET last_seen = ? WHERE id = ?", [now, urow.id], (err) => {
-                        if (err) console.error("Heartbeat DB update error:", err.message);
-                    });
-                } else {
-                    // Insert new user
-                    db.run("INSERT INTO users (school, ip, last_seen, created_at) VALUES (?, ?, ?, ?)", 
-                           [schoolName, ip, now, now], (err) => {
-                        if (err) console.error("Heartbeat DB insert error:", err.message);
-                    });
-                }
-                
-                res.json({ status: 'alive', yourIp: ip, paymentEnabled, paidTimestamp });
-            });
-        });
-    });
-});
+        // Update or insert User
+        await User.updateOne(
+            { school: schoolName, ip: ip },
+            { $set: { last_seen: now }, $setOnInsert: { created_at: now } },
+            { upsert: true }
+        );
 
-app.listen(port, '0.0.0.0', () => {
-    console.log(`--- MasterGrid Pro Server Started ---`);
-    console.log(`Port: ${port}`);
-    console.log(`Database: SQLite (${dbPath})`);
+        res.json({ status: 'alive', yourIp: ip, paymentEnabled, paidTimestamp });
+    } catch (err) {
+        console.error("Heartbeat error:", err.message);
+        res.json({ status: 'alive', yourIp: getIp(req), paymentEnabled: false, paidTimestamp: null });
+    }
 });
 
 // API: GetAllUsers
-app.get('/api/users', (req, res) => {
-    const query = `
-        SELECT u.id, u.school, u.ip, u.last_seen, u.created_at, 
-               CASE WHEN p.school_ip IS NOT NULL THEN 1 ELSE 0 END as has_paid 
-        FROM users u 
-        LEFT JOIN payments p ON p.school_ip = u.school || '_' || u.ip 
-        ORDER BY u.last_seen DESC
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ users: rows || [] });
-    });
+app.get('/api/users', async (req, res) => {
+    try {
+        const users = await User.find({}).sort({ last_seen: -1 });
+        const payments = await Payment.find({});
+        const paidKeys = new Set(payments.map(p => p.school_ip));
+
+        const userRows = users.map((u, i) => {
+            const schoolIpKey = `${u.school}_${u.ip}`;
+            return {
+                id: i + 1,
+                school: u.school,
+                ip: u.ip,
+                last_seen: u.last_seen,
+                created_at: u.created_at,
+                has_paid: paidKeys.has(schoolIpKey) ? 1 : 0
+            };
+        });
+
+        res.json({ users: userRows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // API: Revoke Payment
-app.post('/api/unpay', (req, res) => {
-    const { school, ip } = req.body;
-    const key = `${school}_${ip}`;
-    db.run("DELETE FROM payments WHERE school_ip = ?", [key], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.post('/api/unpay', async (req, res) => {
+    try {
+        const { school, ip } = req.body;
+        const key = `${school}_${ip}`;
+        await Payment.deleteOne({ school_ip: key });
         res.json({ status: 'unpaid', key: key });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // API: Delete User
-app.delete('/api/users', (req, res) => {
-    const { school, ip } = req.body;
-    db.run("DELETE FROM users WHERE school = ? AND ip = ?", [school, ip], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.delete('/api/users', async (req, res) => {
+    try {
+        const { school, ip } = req.body;
+        await User.deleteOne({ school: school, ip: ip });
         const key = `${school}_${ip}`;
-        db.run("DELETE FROM payments WHERE school_ip = ?", [key]);
+        await Payment.deleteOne({ school_ip: key });
         res.json({ status: 'deleted' });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// NEW API: UserLog Trigger Endpoint
+app.post('/api/userlog/trigger', async (req, res) => {
+    try {
+        const { schoolName, year } = req.body;
+        if (!schoolName || !year) {
+            return res.status(400).json({ error: "schoolName and year are required" });
+        }
+        
+        const ip = getIp(req);
+        // Format current date as DD.MM.YYYY
+        const d = new Date();
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const yearStr = d.getFullYear();
+        const formattedDate = `${day}.${month}.${yearStr}`;
+        
+        // Look for an existing UserLog for today
+        let log = await UserLog.findOne({
+            date: formattedDate,
+            schoolName: schoolName.trim(),
+            year: year.trim(),
+            ip: ip
+        });
+        
+        if (!log) {
+            log = new UserLog({
+                date: formattedDate,
+                schoolName: schoolName.trim(),
+                year: year.trim(),
+                ip: ip,
+                previews: 0,
+                pdfs: 0,
+                timestamp: Date.now()
+            });
+            await log.save();
+            console.log(`Created new cloud UserLog entry for ${schoolName.trim()} (${year.trim()})`);
+        }
+        
+        res.json({ status: 'triggered', log });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// NEW API: UserLog Increment Endpoint
+app.post('/api/userlog/increment', async (req, res) => {
+    try {
+        const { schoolName, year, type } = req.body;
+        if (!schoolName || !year || !type) {
+            return res.status(400).json({ error: "schoolName, year, and type are required" });
+        }
+        
+        const ip = getIp(req);
+        const d = new Date();
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const yearStr = d.getFullYear();
+        const formattedDate = `${day}.${month}.${yearStr}`;
+        
+        const incrementField = type === 'preview' ? 'previews' : (type === 'pdf' ? 'pdfs' : null);
+        if (!incrementField) {
+            return res.status(400).json({ error: "Invalid type. Must be 'preview' or 'pdf'" });
+        }
+        
+        const updatedLog = await UserLog.findOneAndUpdate(
+            {
+                date: formattedDate,
+                schoolName: schoolName.trim(),
+                year: year.trim(),
+                ip: ip
+            },
+            { 
+                $inc: { [incrementField]: 1 },
+                $setOnInsert: { timestamp: Date.now() }
+            },
+            { upsert: true, new: true }
+        );
+        
+        res.json({ status: 'incremented', log: updatedLog });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// NEW API: Get All UserLogs
+app.get('/api/userlogs', async (req, res) => {
+    try {
+        const logs = await UserLog.find({}).sort({ timestamp: -1 });
+        res.json({ logs });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.listen(port, '0.0.0.0', () => {
+    const localIp = getLocalIp();
+    console.log(`\n--- MasterGrid Pro Server Started ---`);
+    console.log(`Local URL:   http://localhost:${port}`);
+    if (localIp) {
+        console.log(`Network URL: http://${localIp}:${port}`);
+    } else {
+        console.log(`Network URL: Connect to your Wi-Fi to access from other devices`);
+    }
+    console.log(`Database:    MongoDB (${mongoURI.replace(/:([^:@]+)@/, ':****@')})`);
+    console.log(`--------------------------------------\n`);
 });

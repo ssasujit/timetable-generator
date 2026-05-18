@@ -148,10 +148,20 @@ async function init() {
     document.getElementById('save-preference').onclick = (e) => { e.preventDefault(); savePreference(); };
     
     els.prefType.addEventListener('change', (e) => {
-        const isClubbed = e.target.value === 'clubbed';
-        els.prefDayGroup.style.display = isClubbed ? 'none' : 'flex';
-        els.prefPeriodGroup.style.display = isClubbed ? 'none' : 'flex';
-        els.prefClubbedGroup.style.display = isClubbed ? 'flex' : 'none';
+        const val = e.target.value;
+        if (val === 'clubbed') {
+            els.prefDayGroup.style.display = 'none';
+            els.prefPeriodGroup.style.display = 'none';
+            els.prefClubbedGroup.style.display = 'flex';
+        } else if (val === 'class_teacher_subject') {
+            els.prefDayGroup.style.display = 'none';
+            els.prefPeriodGroup.style.display = 'none';
+            els.prefClubbedGroup.style.display = 'none';
+        } else {
+            els.prefDayGroup.style.display = 'flex';
+            els.prefPeriodGroup.style.display = 'flex';
+            els.prefClubbedGroup.style.display = 'none';
+        }
     });
     
     document.getElementById('btn-class-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('class')); };
@@ -217,6 +227,7 @@ async function init() {
     setInterval(syncDbUsers, 5000);                      // poll every 5 s for real-time updates
     setInterval(updateCountdowns, 1000);
     renderAll();
+    checkAndTriggerUserLog();
 }
 
 let heartbeatInterval = null;
@@ -418,6 +429,22 @@ async function logUsage(type) {
     });
     save();
     await saveAdminStateToServer();
+    
+    // Increment count in cloud MongoDB UserLog
+    const schoolName = (state.settings.schoolName || '').trim();
+    const year = (state.settings.year || '').trim();
+    if (schoolName && year && (type === 'preview' || type === 'pdf')) {
+        try {
+            await fetch('/api/userlog/increment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ schoolName, year, type })
+            });
+            console.log(`Cloud UserLog incremented for type: ${type}`);
+        } catch (e) {
+            console.warn("Failed to contact backend to increment User's Log. Silent fallback.");
+        }
+    }
 }
 async function loadAdminStateFromServer() {
     try {
@@ -478,6 +505,58 @@ async function saveAdminStateToServer() {
 function renderAdminDashboard() {
     if (!els.adminRecordsBody) return;
     
+    // Update DB connection status in top right header
+    const dbStatusTag = document.getElementById('admin-db-status');
+    if (dbStatusTag) {
+        if (state.dbConnected !== false) {
+            dbStatusTag.innerText = "MONGODB ONLINE";
+            dbStatusTag.className = "db-status online";
+            dbStatusTag.style.background = "rgba(16, 185, 129, 0.1)";
+            dbStatusTag.style.color = "#10b981";
+            dbStatusTag.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+        } else {
+            dbStatusTag.innerText = "MONGODB OFFLINE";
+            dbStatusTag.className = "db-status offline";
+            dbStatusTag.style.background = "rgba(239, 68, 68, 0.1)";
+            dbStatusTag.style.color = "#ef4444";
+            dbStatusTag.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+        }
+    }
+
+    // DB connection status banner setup in scroll container
+    const scrollContainer = els.adminDashModal ? els.adminDashModal.querySelector('.guide-scroll-container') : null;
+    if (scrollContainer) {
+        let dbWarningBanner = document.getElementById('db-connection-warning');
+        if (state.dbConnected === false) {
+            if (!dbWarningBanner) {
+                const warningHtml = `
+                    <div id="db-connection-warning" class="guide-section" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; border-left: 4px solid #ef4444;">
+                        <h4 style="color: #ef4444; margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem; font-weight: 700;">
+                            <i data-lucide="alert-triangle"></i> Cloud MongoDB Offline
+                        </h4>
+                        <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem; line-height: 1.5;">
+                            The backend node server cannot connect to the cloud MongoDB database (Mongoose). Persistent school logs, payments, and admin settings are in <strong>read-only / offline simulation mode</strong>.
+                        </p>
+                        <div style="font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 6px; color: #fca5a5; overflow-x: auto; margin-top: 0.25rem;">
+                            Error: ${state.dbError || 'Connection timed out / Refused'}
+                        </div>
+                        <p style="color: var(--text-muted); margin: 0; font-size: 0.85rem; font-style: italic; margin-top: 0.25rem;">
+                            <strong>Solution:</strong> Set the MONGODB_URI environment variable on your server to a valid MongoDB Atlas connection string to enable full cloud persistence.
+                        </p>
+                    </div>
+                `;
+                scrollContainer.insertAdjacentHTML('afterbegin', warningHtml);
+                if(window.lucide) lucide.createIcons();
+            } else {
+                dbWarningBanner.style.display = 'flex';
+            }
+        } else {
+            if (dbWarningBanner) {
+                dbWarningBanner.style.display = 'none';
+            }
+        }
+    }
+    
     const logs = state.usageLogs || [];
     const payments = state.paymentRecords || {};
     const active = state.activeUsers || [];
@@ -488,33 +567,32 @@ function renderAdminDashboard() {
     document.getElementById('stat-total-logs').innerText = logs.length;
     document.getElementById('stat-live-users').innerText = active.length;
     
-    // Combine logs and payments for a unified view
-    let records = logs.map(l => ({...l, isPayment: false})).reverse();
+    // Sort logs by timestamp descending (most recent first)
+    logs.sort((a, b) => b.timestamp - a.timestamp);
+    const totalLogsCount = logs.length;
     
-    // Add payment records as special entries
-    Object.keys(payments).forEach(key => {
-        const [school, ip] = key.split('_');
-        records.push({
-            timestamp: payments[key],
-            school: school,
-            ip: ip,
-            type: 'PAYMENT',
-            isPayment: true
-        });
-    });
-    
-    // Sort by time descending
-    records.sort((a,b) => b.timestamp - a.timestamp);
-    
-    els.adminRecordsBody.innerHTML = records.map(r => `
-        <tr>
-            <td>${new Date(r.timestamp).toLocaleString()}</td>
-            <td style="color: var(--secondary); font-weight:600;">${r.school}</td>
-            <td style="font-family: monospace; font-size: 0.8rem;">${r.ip}</td>
-            <td><span class="tag small" style="background: ${r.isPayment ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)'}">${r.type.toUpperCase()}</span></td>
-            <td>${r.isPayment ? '<span style="color: #10b981; font-weight:800;">PAID</span>' : '<span style="color: var(--text-muted);">VIEWED</span>'}</td>
-        </tr>
-    `).join('') || '<tr><td colspan="5" style="text-align:center;">No records found</td></tr>';
+    els.adminRecordsBody.innerHTML = logs.map((log, i) => {
+        const slNo = totalLogsCount - i;
+        const schoolOrg = log.year ? `${log.school} (${log.year})` : log.school;
+        
+        // Render Preview and PDF exactly as requested: SL. NO ^ count (drawn as superscript)
+        const previews = log.previews || 0;
+        const pdfs = log.pdfs || 0;
+        
+        const previewDisplay = `<span class="sketched-badge" style="font-size: 1rem; font-weight: 500; color: var(--text);">${slNo}<sup style="color: var(--primary); font-weight: 800; font-size: 0.85rem; margin-left: 2px;">${previews}</sup></span>`;
+        const pdfDisplay = `<span class="sketched-badge" style="font-size: 1rem; font-weight: 500; color: var(--text);">${slNo}<sup style="color: var(--secondary); font-weight: 800; font-size: 0.85rem; margin-left: 2px;">${pdfs}</sup></span>`;
+        
+        return `
+            <tr>
+                <td style="font-weight: 700; color: var(--text-muted); text-align: center;">${slNo}</td>
+                <td style="text-align: center;">${log.date || new Date(log.timestamp).toLocaleDateString('en-GB').replace(/\//g, '.')}</td>
+                <td style="color: var(--secondary); font-weight: 600; text-align: left;">${schoolOrg}</td>
+                <td style="font-family: monospace; font-size: 0.85rem; text-align: center;">${log.ip}</td>
+                <td style="text-align: center;">${previewDisplay}</td>
+                <td style="text-align: center;">${pdfDisplay}</td>
+            </tr>
+        `;
+    }).join('') || '<tr><td colspan="6" style="text-align:center;">No logs found</td></tr>';
 
     // Render Active Users
     const liveBody = document.getElementById('admin-live-body');
@@ -708,75 +786,7 @@ function renderSidebarStats() {
     `;
 }
 
-function renderSummaryTable() {
-    const container = document.getElementById('teacher-summary-container');
-    if (!container) return;
-    
-    // Build a workload section that will be appended after sidebar stats
-    let workloadEl = document.getElementById('teacher-workload-panel');
-    if (!workloadEl) {
-        workloadEl = document.createElement('div');
-        workloadEl.id = 'teacher-workload-panel';
-        container.appendChild(workloadEl);
-    }
-    
-    if (!state.teacherRules || state.teacherRules.length === 0) {
-        workloadEl.innerHTML = `
-            <div class="workload-section">
-                <div class="workload-title">Teacher Workload</div>
-                <div class="workload-empty">No teachers added yet.<br>Add teachers to see workload.</div>
-            </div>`;
-        return;
-    }
-    
-// Build one card per teacher with full period breakdown
-    const rows = state.teacherRules.map(teacher => {
-        let totalPeriods = 0;
-        const classDetails = [];
-
-        // Class charge: 1st period is auto-assigned to class teacher
-        if (teacher.charge && teacher.charge !== '') {
-            classDetails.push(`
-                <span class="wl-subject">★ Class Teacher</span>
-                <span class="wl-class">${teacher.charge}</span>
-                <span class="wl-periods">1 pd</span>`);
-            totalPeriods += 1;
-        }
-
-        // Each class-subject assignment — sum periods from subject rules
-        if (teacher.classes && teacher.classes.length > 0) {
-            teacher.classes.forEach(cls => {
-                const subjectRule = state.subjectRules.find(
-                    r => r.name === cls.subj && r.std === cls.std
-                );
-                const periods = subjectRule ? subjectRule.periods : 1;
-                totalPeriods += periods;
-                classDetails.push(`<span title="${cls.std} - ${cls.subj}: ${periods} periods">${cls.std}/${cls.subj}(${periods})</span>`);
-            });
-        }
-
-        const chargeLabel = teacher.charge ? `<span style="color: var(--accent); font-size: 0.6rem; margin-left: 4px;" title="Class Teacher of ${teacher.charge}">★${teacher.charge}</span>` : '';
-
-        return `
-            <div class="workload-row">
-                <div class="workload-teacher-name">
-                    <span>${teacher.name}${chargeLabel}</span>
-                    <span class="workload-badge">${totalPeriods} p/w</span>
-                </div>
-                <div class="workload-detail">
-                    ${classDetails.length > 0 ? classDetails.join('') : '<em style="opacity:0.5;">No classes assigned</em>'}
-                </div>
-            </div>`;
-    }).join('');
-    
-    workloadEl.innerHTML = `
-        <div class="workload-section">
-            <div class="workload-title">Teacher Workload</div>
-            ${rows}
-        </div>`;
-    
-    if (window.lucide) lucide.createIcons();
-}
+// Deprecated: Duplicate definition removed. Teacher workload summary is rendered by renderSummaryTable() below.
 
 function setupAntiScreenshot() {
     // Prevent right click on preview modal content
@@ -805,6 +815,30 @@ function updateSetting(key, val) {
     state.settings[key] = val;
     save();
     renderAll();
+    
+    if (key === 'schoolName' || key === 'year') {
+        checkAndTriggerUserLog();
+    }
+}
+
+async function checkAndTriggerUserLog() {
+    const schoolName = (state.settings.schoolName || '').trim();
+    const year = (state.settings.year || '').trim();
+    
+    if (schoolName && year) {
+        try {
+            const response = await fetch('/api/userlog/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ schoolName, year })
+            });
+            if (response.ok) {
+                console.log("Cloud User's Log triggered successfully.");
+            }
+        } catch (e) {
+            console.warn("Failed to contact backend for User's Log trigger. Silent fallback.");
+        }
+    }
 }
 
 function save() {
@@ -1270,6 +1304,12 @@ function savePreference() {
             id: Date.now(),
             subj, type, teacher, clubbedClasses
         });
+    } else if (type === 'class_teacher_subject') {
+        if (!teacher) return showToast("Select a teacher for this rule.");
+        state.preferences.push({
+            id: Date.now(),
+            subj, type, teacher
+        });
     } else {
         if (type !== 'specific' && periods.length === 0) return showToast("Add at least one period.");
         if (type === 'specific' && (day === 'any' || periods.length !== 1)) return showToast("Select a specific Day and exactly ONE Period.");
@@ -1309,6 +1349,14 @@ function renderPreferences() {
                 </div>
                 <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
             `;
+        } else if (p.type === 'class_teacher_subject') {
+            li.innerHTML = `
+                <div class="card-info">
+                    <strong>${p.subj} ${teacherText}</strong>
+                    <p>CLASS TEACHER 1ST PERIOD PREFERRED SUBJECT</p>
+                </div>
+                <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
+            `;
         } else {
             const periodsText = p.periods.map(num => `P${num}`).join(', ');
             li.innerHTML = `
@@ -1326,18 +1374,27 @@ function renderPreferences() {
 
 function getTeacherWorkload(teacherName) {
     let total = 0;
-    const rules = state.teacherRules.find(t => t.name === teacherName);
-    if (!rules) return 0;
+    if (!teacherName) return 0;
+    const nameLower = teacherName.trim().toLowerCase();
     
-    rules.classes.forEach(c => {
-        const subRule = state.subjectRules.find(r => r.std === c.std && r.name === c.subj);
-        if (subRule) total += subRule.periods;
+    const matchingRules = state.teacherRules.filter(t => t.name.trim().toLowerCase() === nameLower);
+    if (matchingRules.length === 0) return 0;
+    
+    const processedClasses = new Set();
+    
+    matchingRules.forEach(rules => {
+        if (rules.classes && rules.classes.length > 0) {
+            rules.classes.forEach(c => {
+                const classKey = `${c.std}_${c.subj}`;
+                if (!processedClasses.has(classKey)) {
+                    processedClasses.add(classKey);
+                    const subRule = state.subjectRules.find(r => r.std === c.std && r.name === c.subj);
+                    if (subRule) total += subRule.periods;
+                    else total += 1;
+                }
+            });
+        }
     });
-    
-    // Add class charge period (1st period) if it exists
-    if (rules.charge) {
-        total += 1; // 1st period is always for class charge
-    }
     
     return total;
 }
@@ -1350,10 +1407,14 @@ function renderTeachers() {
         const classesTxt = t.classes.map(c => `${c.std}-${c.subj}`).join(', ') || 'None';
         
         const workload = getTeacherWorkload(t.name);
+        const displayName = t.charge 
+            ? `${t.name} (${t.charge} class teacher)` 
+            : t.name;
+            
         li.innerHTML = `
             <div class="card-info">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <strong>${t.name}</strong>
+                    <strong>${displayName}</strong>
                     <span class="badge ${workload > 30 ? 'danger' : 'success'}">${workload} Periods</span>
                 </div>
                 <p class="charge">Charge: ${t.charge || 'None'}</p>
@@ -1394,10 +1455,65 @@ function renderSummaryTable() {
         </div>
     `;
 
-    if (state.teacherRules.length === 0) {
+    if (!state.teacherRules || state.teacherRules.length === 0) {
         els.summaryContainer.innerHTML = calculationHtml;
         return;
     }
+    
+    // Group teachers by name (case-insensitive, trimmed) to consolidate workloads
+    const teacherGroups = {};
+    state.teacherRules.forEach(teacher => {
+        if (!teacher.name) return;
+        const key = teacher.name.trim().toLowerCase();
+        if (!teacherGroups[key]) {
+            teacherGroups[key] = {
+                name: teacher.name.trim(),
+                charges: [],
+                classes: [],
+                totalPeriods: 0
+            };
+        }
+        
+        if (teacher.charge && teacher.charge !== '') {
+            if (!teacherGroups[key].charges.includes(teacher.charge)) {
+                teacherGroups[key].charges.push(teacher.charge);
+            }
+        }
+        
+        if (teacher.classes && teacher.classes.length > 0) {
+            teacher.classes.forEach(cls => {
+                const exists = teacherGroups[key].classes.some(
+                    c => c.std === cls.std && c.subj === cls.subj
+                );
+                if (!exists) {
+                    teacherGroups[key].classes.push(cls);
+                }
+            });
+        }
+    });
+
+    // Calculate total periods for each group
+    Object.values(teacherGroups).forEach(group => {
+        let total = 0;
+        
+        group.classes.forEach(cls => {
+            const subjectRule = state.subjectRules.find(
+                r => r.name === cls.subj && r.std === cls.std
+            );
+            const periods = subjectRule ? subjectRule.periods : 5;
+            total += periods;
+        });
+        
+        group.totalPeriods = total;
+    });
+
+    // Sort teachers descending by workload, then alphabetically
+    const sortedTeachers = Object.values(teacherGroups).sort((a, b) => {
+        if (b.totalPeriods !== a.totalPeriods) {
+            return b.totalPeriods - a.totalPeriods;
+        }
+        return a.name.localeCompare(b.name);
+    });
     
     let html = calculationHtml + `
         <div class="summary-widget card">
@@ -1413,14 +1529,13 @@ function renderSummaryTable() {
                 <tbody>
     `;
 
-    state.teacherRules.forEach((t, idx) => {
-        let total = 0;
+    sortedTeachers.forEach((t, idx) => {
         let subjectsListHtml = '';
         
+        // Render classes taken
         t.classes.forEach(c => {
             let rule = state.subjectRules.find(r => r.name === c.subj && r.std === c.std);
-            let p = rule ? rule.periods : 5; // Default to 5 if rule not found, but should usually be found
-            total += p;
+            let p = rule ? rule.periods : 5; // Default to 5 if rule not found
             subjectsListHtml += `
                 <div class="subject-item">
                     <span class="subject-name">${c.subj} (${c.std})</span>
@@ -1429,13 +1544,17 @@ function renderSummaryTable() {
             `;
         });
 
+        const chargeBrackets = t.charges.length > 0
+            ? ` (${t.charges.join(', ')} class teacher)`
+            : '';
+
         html += `
             <tr>
                 <td class="sl-no">${idx + 1}</td>
-                <td class="teacher-name">${t.name}</td>
+                <td class="teacher-name">${t.name}${chargeBrackets}</td>
                 <td>
                     ${subjectsListHtml}
-                    <div class="total-row">TOTAL: ${total}</div>
+                    <div class="total-row">TOTAL: ${t.totalPeriods}</div>
                 </td>
             </tr>
         `;
@@ -1471,8 +1590,70 @@ function updateOutputSelects() {
 }
 
 
+// --- Timetable Generation Validation ---
+function validateDataBeforeGeneration() {
+    if (state.subjectRules.length === 0) {
+        showToast("ERROR: No subjects have been added. Please add subjects with their allotted periods first!", 'error');
+        return false;
+    }
+    if (state.teacherRules.length === 0) {
+        showToast("ERROR: No teachers have been added. Please add teachers with their class charge or classes taken first!", 'error');
+        return false;
+    }
+
+    const maxWeeklyPeriods = 5 * (parseInt(state.periods) || 8);
+    
+    // 1. Collect all classes
+    let classes = new Set();
+    state.subjectRules.forEach(r => classes.add(r.std));
+    state.teacherRules.forEach(t => {
+        if(t.charge) classes.add(t.charge);
+        t.classes.forEach(c => classes.add(c.std));
+    });
+    
+    // 2. Check if any class exceeds max weekly periods
+    for (const c of classes) {
+        let totalClassPeriods = 0;
+        const classSubjects = state.subjectRules.filter(r => r.std === c);
+        classSubjects.forEach(r => {
+            totalClassPeriods += parseInt(r.periods) || 0;
+        });
+        
+        if (totalClassPeriods > maxWeeklyPeriods) {
+            showToast(`ERROR: Class '${c}' has a total of ${totalClassPeriods} allotted subject periods, which exceeds the maximum limit of ${maxWeeklyPeriods} periods per week (5 days x ${state.periods} periods/day). Please reduce the allotted periods!`, 'error');
+            return false;
+        }
+    }
+    
+    // 3. Check if any teacher's workload exceeds max weekly periods
+    const teacherNames = new Set(state.teacherRules.map(t => t.name.trim()));
+    for (const name of teacherNames) {
+        const workload = getTeacherWorkload(name);
+        if (workload > maxWeeklyPeriods) {
+            showToast(`ERROR: Teacher '${name}' has a workload of ${workload} periods, which exceeds the weekly maximum of ${maxWeeklyPeriods} periods. Please reduce their classes taken!`, 'error');
+            return false;
+        }
+    }
+    
+    // 4. Check for subjects assigned to teachers but not defined in Subjects list
+    for (const t of state.teacherRules) {
+        for (const c of t.classes) {
+            const subjectExists = state.subjectRules.some(r => r.std === c.std && r.name === c.subj);
+            if (!subjectExists) {
+                showToast(`ERROR: Teacher '${t.name}' is assigned to teach '${c.subj}' in '${c.std}', but '${c.subj}' is not defined in the Subjects list for '${c.std}'. Please add the subject rule under Subjects first!`, 'error');
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
 // --- Timetable Generation ---
 function generateTimetable() {
+    if (!validateDataBeforeGeneration()) {
+        return;
+    }
     // Collect all classes
     let classes = new Set();
     state.subjectRules.forEach(r => classes.add(r.std));
@@ -1499,22 +1680,160 @@ function generateTimetable() {
     let reqs = [];
     let prePlacedCounts = {}; // { teacher_std_subj: count }
     
-    // First, satisfy the Class Teacher rule: 1st period Monday-Friday
+    // First, satisfy the Class Teacher & Reallocation rule: 1st period Monday-Friday
+    
+    // 1. Identify all class teachers and their preferred 1st period subject
+    let classTeachers = {}; // { className: { name: teacherName, subj: subjectName, pCount: pCount, assignedDaysCount: N } }
     state.teacherRules.forEach(t => {
-        if(t.charge && masterGrid[t.charge]) {
+        if (t.charge && masterGrid[t.charge]) {
             let subj = 'Class Teacher';
-            let teacherTakes = t.classes.find(c => c.std === t.charge);
-            if (teacherTakes) {
-                subj = teacherTakes.subj;
-                let key = `${t.name}_${t.charge}_${subj}`;
-                prePlacedCounts[key] = (prePlacedCounts[key] || 0) + days.length; // 5 days
+            // Check if there is a class_teacher_subject preference for this teacher
+            const pref = state.preferences.find(p => p.type === 'class_teacher_subject' && p.teacher === t.name);
+            if (pref) {
+                subj = pref.subj;
+            } else {
+                let teacherTakes = t.classes.find(c => c.std === t.charge);
+                if (teacherTakes) {
+                    subj = teacherTakes.subj;
+                }
             }
             
-            days.forEach(day => {
-                masterGrid[t.charge][day][1] = `${subj} (${t.name})`;
-                teacherGrid[t.name][day][1] = `${t.charge} (${subj})`;
-            });
+            let pCount = 5; // Default if not taking subject or no rule
+            if (subj !== 'Class Teacher') {
+                let rule = state.subjectRules.find(r => r.std === t.charge && r.name === subj);
+                pCount = rule ? parseInt(rule.periods) : 5;
+            }
+            
+            classTeachers[t.charge] = {
+                name: t.name,
+                subj: subj,
+                pCount: pCount,
+                assignedDaysCount: Math.min(pCount, 5)
+            };
         }
+    });
+    
+    // 2. Identify all teaching workloads for all classes
+    let classWorkloads = {}; // { className: [ { teacher, subj, pCount, remaining } ] }
+    classes.forEach(c => {
+        classWorkloads[c] = [];
+        state.teacherRules.forEach(t => {
+            t.classes.forEach(tc => {
+                if (tc.std === c) {
+                    let rule = state.subjectRules.find(r => r.std === c && r.name === tc.subj);
+                    let pCount = rule ? parseInt(rule.periods) : 5;
+                    classWorkloads[c].push({
+                        teacher: t.name,
+                        subj: tc.subj,
+                        pCount: pCount,
+                        remaining: pCount
+                    });
+                }
+            });
+        });
+    });
+    
+    // 3. First pass: Assign Class Teachers to their first period days (up to min(pCount, 5))
+    let firstPeriodAssignments = {}; // { className: { dayName: { teacher, subj } } }
+    classes.forEach(c => {
+        firstPeriodAssignments[c] = {};
+    });
+    
+    classes.forEach(c => {
+        let ct = classTeachers[c];
+        if (ct) {
+            let N = ct.assignedDaysCount;
+            for (let i = 0; i < N; i++) {
+                let day = days[i];
+                firstPeriodAssignments[c][day] = { teacher: ct.name, subj: ct.subj };
+                // Decrement remaining periods for this teacher in this class
+                let wl = classWorkloads[c].find(w => w.teacher === ct.name && w.subj === ct.subj);
+                if (wl) {
+                    wl.remaining--;
+                }
+            }
+        }
+    });
+    
+    // 4. Second pass: Allocate other teachers of the class for the remaining days
+    days.forEach(day => {
+        classes.forEach(c => {
+            if (!firstPeriodAssignments[c][day]) {
+                // Find candidates in classWorkloads[c] who have remaining > 0 and are NOT assigned on this day in any other class
+                let candidates = classWorkloads[c].filter(w => w.remaining > 0);
+                candidates = candidates.filter(cand => {
+                    let isAssigned = false;
+                    Object.keys(firstPeriodAssignments).forEach(otherC => {
+                        if (firstPeriodAssignments[otherC][day] && firstPeriodAssignments[otherC][day].teacher === cand.teacher) {
+                            isAssigned = true;
+                        }
+                    });
+                    return !isAssigned;
+                });
+                
+                if (candidates.length > 0) {
+                    // Pick the candidate with the highest remaining periods to distribute workload evenly
+                    candidates.sort((a, b) => b.remaining - a.remaining);
+                    let chosen = candidates[0];
+                    firstPeriodAssignments[c][day] = { teacher: chosen.teacher, subj: chosen.subj };
+                    chosen.remaining--;
+                } else {
+                    // Fallback 1: Find any teacher of this class (even if remaining <= 0) who is NOT busy on this day
+                    let fallbackCandidates = classWorkloads[c].filter(cand => {
+                        let isAssigned = false;
+                        Object.keys(firstPeriodAssignments).forEach(otherC => {
+                            if (firstPeriodAssignments[otherC][day] && firstPeriodAssignments[otherC][day].teacher === cand.teacher) {
+                                isAssigned = true;
+                            }
+                        });
+                        return !isAssigned;
+                    });
+                    
+                    if (fallbackCandidates.length > 0) {
+                        fallbackCandidates.sort((a, b) => b.remaining - a.remaining);
+                        let chosen = fallbackCandidates[0];
+                        let useSubj = chosen.remaining > 0 ? chosen.subj : 'Class Teacher';
+                        firstPeriodAssignments[c][day] = { teacher: chosen.teacher, subj: useSubj };
+                        if (useSubj === chosen.subj) {
+                            chosen.remaining--;
+                        }
+                    } else {
+                        // Fallback 2: Absolutely no teacher is free. Fall back to Class Teacher themselves since they are free
+                        let ct = classTeachers[c];
+                        if (ct) {
+                            let wl = classWorkloads[c] ? classWorkloads[c].find(w => w.teacher === ct.name && w.subj === ct.subj) : null;
+                            let useSubj = (wl && wl.remaining > 0) ? ct.subj : 'Class Teacher';
+                            firstPeriodAssignments[c][day] = { teacher: ct.name, subj: useSubj };
+                            if (wl && useSubj === ct.subj) {
+                                wl.remaining--;
+                            }
+                        } else {
+                            // Fallback 3: Generic Class Teacher
+                            firstPeriodAssignments[c][day] = { teacher: 'Class Teacher', subj: 'Class Teacher' };
+                        }
+                    }
+                }
+            }
+        });
+    });
+    
+    // 5. Apply the resolved assignments to masterGrid and teacherGrid, and update prePlacedCounts
+    classes.forEach(c => {
+        days.forEach(day => {
+            let assignment = firstPeriodAssignments[c][day];
+            if (assignment) {
+                let { teacher, subj } = assignment;
+                
+                masterGrid[c][day][1] = `${subj} (${teacher})`;
+                if (teacherGrid[teacher]) {
+                    teacherGrid[teacher][day][1] = `${c} (${subj})`;
+                }
+                
+                // Track in prePlacedCounts so it reduces their remaining requirements correctly
+                let key = `${teacher}_${c}_${subj}`;
+                prePlacedCounts[key] = (prePlacedCounts[key] || 0) + 1;
+            }
+        });
     });
 
     // Separate requirements into passes

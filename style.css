@@ -623,13 +623,17 @@ button {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(5px);
-    justify-content: center;
-    align-items: center;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
 }
 .modal.show {
     display: flex;
+    justify-content: center;
+    align-items: flex-start;
 }
 .modal-content {
+    margin: auto;
     max-width: 400px;
     width: 90%;
     text-align: center;
@@ -1709,4 +1713,31 @@ header {
     align-items: center;
     justify-content: center;
     gap: 8px;
+}
+
+/* Responsive Overrides for Pro Admin Dashboard */
+@media (max-width: 768px) {
+    .admin-header-pro {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .admin-status-group {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    .admin-status-group button {
+        width: 100%;
+        margin: 0 !important;
+    }
+    .admin-stats-grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+    .modal-content {
+        padding: 1.5rem !important;
+        border-radius: 16px !important;
+    }
 }

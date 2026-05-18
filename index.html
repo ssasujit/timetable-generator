@@ -199,6 +199,7 @@
                             <option value="not_allowed">NOT ALLOWED</option>
                             <option value="specific">SPECIFIC DAY & PERIOD</option>
                             <option value="clubbed">CLUBBED CLASSES</option>
+                            <option value="class_teacher_subject">CLASS TEACHER 1ST PERIOD SUBJECT</option>
                         </select>
                     </div>
                     <div class="input-group" id="pref-day-group">
@@ -462,16 +463,17 @@
                 </div>
 
                 <div class="guide-section">
-                    <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;"><i data-lucide="list"></i> PAYMENT & USAGE RECORDS</h3>
+                    <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; color: var(--secondary);"><i data-lucide="list"></i> USER'S LOG</h3>
                     <div style="overflow-x: auto; margin-top: 1rem;">
-                        <table class="summary-table admin-table">
+                        <table class="summary-table admin-table text-center">
                             <thead>
                                 <tr>
-                                    <th>DATE</th>
-                                    <th>SCHOOL / USER</th>
-                                    <th>IP ADDRESS</th>
-                                    <th>TYPE</th>
-                                    <th>STATUS</th>
+                                    <th style="width: 80px; text-align: center;">SL. NO</th>
+                                    <th style="width: 120px; text-align: center;">Date</th>
+                                    <th style="text-align: left;">School / Organization</th>
+                                    <th style="width: 140px; text-align: center;">IP Address</th>
+                                    <th style="width: 100px; text-align: center;">Preview</th>
+                                    <th style="width: 100px; text-align: center;">Pdf</th>
                                 </tr>
                             </thead>
                             <tbody id="admin-records-body">
