@@ -1,4 +1,6 @@
 const express = require('express');
+require('dotenv').config();
+
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -56,7 +58,8 @@ const userLogSchema = new mongoose.Schema({
     pdfs: { type: Number, default: 0 },
     timestamp: { type: Number, required: true }
 });
-userLogSchema.index({ date: 1, schoolName: 1, year: 1, ip: 1 }, { unique: true });
+userLogSchema.index({ timestamp: -1 }); // Index by timestamp for fast sorting
+
 const UserLog = mongoose.model('UserLog', userLogSchema);
 
 const paymentSchema = new mongoose.Schema({
@@ -391,27 +394,19 @@ app.post('/api/userlog/trigger', async (req, res) => {
         const yearStr = d.getFullYear();
         const formattedDate = `${day}.${month}.${yearStr}`;
         
-        // Look for an existing UserLog for today
-        let log = await UserLog.findOne({
+        // Always create a new log entry for live tracking whenever they enter school/year
+        const log = new UserLog({
             date: formattedDate,
             schoolName: schoolName.trim(),
             year: year.trim(),
-            ip: ip
+            ip: ip,
+            previews: 0,
+            pdfs: 0,
+            timestamp: Date.now()
         });
-        
-        if (!log) {
-            log = new UserLog({
-                date: formattedDate,
-                schoolName: schoolName.trim(),
-                year: year.trim(),
-                ip: ip,
-                previews: 0,
-                pdfs: 0,
-                timestamp: Date.now()
-            });
-            await log.save();
-            console.log(`Created new cloud UserLog entry for ${schoolName.trim()} (${year.trim()})`);
-        }
+        await log.save();
+        console.log(`Live UserLog created: ${schoolName.trim()} (${yearStr})`);
+
         
         res.json({ status: 'triggered', log });
     } catch (err) {
@@ -441,17 +436,16 @@ app.post('/api/userlog/increment', async (req, res) => {
         
         const updatedLog = await UserLog.findOneAndUpdate(
             {
-                date: formattedDate,
                 schoolName: schoolName.trim(),
                 year: year.trim(),
                 ip: ip
             },
             { 
-                $inc: { [incrementField]: 1 },
-                $setOnInsert: { timestamp: Date.now() }
+                $inc: { [incrementField]: 1 }
             },
-            { upsert: true, new: true }
+            { sort: { timestamp: -1 }, new: true }
         );
+
         
         res.json({ status: 'incremented', log: updatedLog });
     } catch (err) {

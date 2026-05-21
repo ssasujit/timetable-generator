@@ -2,3 +2,6 @@ node_modules
 *.bak
 mastergrid.sqlite
 admin_state.json
+.env
+*.migrated
+

@@ -164,6 +164,13 @@ async function init() {
         }
     });
     
+    els.prefDay.addEventListener('change', (e) => {
+        // Hiding logic removed
+    });
+
+    // Set initial visibility for Preferred Periods
+    els.prefPeriodGroup.style.display = 'flex';
+    
     document.getElementById('btn-class-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('class')); };
     document.getElementById('btn-teacher-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('teacher')); };
     document.getElementById('btn-school-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('school')); };
@@ -578,21 +585,24 @@ function renderAdminDashboard() {
         // Render Preview and PDF exactly as requested: SL. NO ^ count (drawn as superscript)
         const previews = log.previews || 0;
         const pdfs = log.pdfs || 0;
-        
         const previewDisplay = `<span class="sketched-badge" style="font-size: 1rem; font-weight: 500; color: var(--text);">${slNo}<sup style="color: var(--primary); font-weight: 800; font-size: 0.85rem; margin-left: 2px;">${previews}</sup></span>`;
         const pdfDisplay = `<span class="sketched-badge" style="font-size: 1rem; font-weight: 500; color: var(--text);">${slNo}<sup style="color: var(--secondary); font-weight: 800; font-size: 0.85rem; margin-left: 2px;">${pdfs}</sup></span>`;
+        const time = new Date(log.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
         
         return `
             <tr>
                 <td style="font-weight: 700; color: var(--text-muted); text-align: center;">${slNo}</td>
                 <td style="text-align: center;">${log.date || new Date(log.timestamp).toLocaleDateString('en-GB').replace(/\//g, '.')}</td>
+                <td style="text-align: center; font-weight: 600; color: var(--accent);">${time}</td>
                 <td style="color: var(--secondary); font-weight: 600; text-align: left;">${schoolOrg}</td>
                 <td style="font-family: monospace; font-size: 0.85rem; text-align: center;">${log.ip}</td>
                 <td style="text-align: center;">${previewDisplay}</td>
                 <td style="text-align: center;">${pdfDisplay}</td>
             </tr>
         `;
-    }).join('') || '<tr><td colspan="6" style="text-align:center;">No logs found</td></tr>';
+    }).join('') || '<tr><td colspan="7" style="text-align:center;">No logs found</td></tr>';
+
 
     // Render Active Users
     const liveBody = document.getElementById('admin-live-body');
@@ -1246,24 +1256,33 @@ function updatePrefTeacherSelect() {
 function updatePrefPeriodOptions() {
     const count = parseInt(state.settings.periods) || 8;
     const currentVal = els.prefPeriodSelect.value;
-    let html = '';
+    let html = '<option value="all">ALL DAY</option>';
     for(let i=1; i<=count; i++) html += `<option value="${i}">Period ${i}</option>`;
     els.prefPeriodSelect.innerHTML = html;
-    if (currentVal && parseInt(currentVal) <= count) els.prefPeriodSelect.value = currentVal;
+    if (currentVal && (currentVal === 'all' || parseInt(currentVal) <= count)) els.prefPeriodSelect.value = currentVal;
 }
 
 function addTempPrefPeriod() {
-    const p = parseInt(els.prefPeriodSelect.value);
-    if (!p) {
+    const val = els.prefPeriodSelect.value;
+    if (!val) {
         showToast("Select a period first.");
         return;
     }
-    if (!state.tempPrefPeriods.includes(p)) {
-        state.tempPrefPeriods.push(p);
-        state.tempPrefPeriods.sort((a,b) => a-b);
-        showToast(`Period ${p} added to rule list`, 'success');
+
+    if (val === 'all') {
+        const count = parseInt(state.settings.periods) || 8;
+        state.tempPrefPeriods = [];
+        for (let i = 1; i <= count; i++) state.tempPrefPeriods.push(i);
+        showToast("All periods added", 'success');
     } else {
-        showToast("Period already in list.");
+        const p = parseInt(val);
+        if (!state.tempPrefPeriods.includes(p)) {
+            state.tempPrefPeriods.push(p);
+            state.tempPrefPeriods.sort((a,b) => a-b);
+            showToast(`Period ${p} added to rule list`, 'success');
+        } else {
+            showToast("Period already in list.");
+        }
     }
     renderTempPrefPeriods();
 }
@@ -1289,7 +1308,7 @@ function savePreference() {
     const type = els.prefType.value;
     const day = els.prefDay.value;
     const teacher = els.prefTeacher.value;
-    const periods = [...state.tempPrefPeriods];
+    let periods = [...state.tempPrefPeriods];
     const clubbedRaw = els.prefClubbedClasses ? els.prefClubbedClasses.value.trim() : '';
     
     if (!subj) return showToast("Select a subject first.");
@@ -1358,11 +1377,16 @@ function renderPreferences() {
                 <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
             `;
         } else {
-            const periodsText = p.periods.map(num => `P${num}`).join(', ');
+            const isAllPeriods = (p.periods.length === (parseInt(state.settings.periods) || 8));
+            const isAllDays = (p.day === 'any');
+            
+            const dayText = isAllDays ? 'ALL DAY' : p.day.toUpperCase();
+            const periodsText = isAllPeriods ? 'ALL DAY' : p.periods.map(num => `P${num}`).join(', ');
+            
             li.innerHTML = `
                 <div class="card-info">
                     <strong>${p.subj} ${teacherText}</strong>
-                    <p>${p.type.toUpperCase()} on ${p.day.toUpperCase()} (${periodsText})</p>
+                    <p>${p.type.toUpperCase()} on ${dayText} (${periodsText})</p>
                 </div>
                 <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
             `;
