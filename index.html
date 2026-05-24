@@ -7,7 +7,11 @@
     <link rel="stylesheet" href="style.css">
     <!-- Libraries via CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script>window.jsPDF = window.jspdf.jsPDF;</script>
+    <script>
+        if (window.jspdf && window.jspdf.jsPDF) {
+            window.jsPDF = window.jspdf.jsPDF;
+        }
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -93,7 +97,7 @@
                     <h2><i data-lucide="settings"></i> SETTINGS</h2>
                 </div>
                 <section class="row card" id="row-settings">
-                    <div id="payment-status-banner" class="payment-banner" style="display: none; width: 100%; margin-bottom: 1.5rem; padding: 1rem; border-radius: 10px; text-align: center; font-weight: 600;"></div>
+
                     <div class="input-group">
                         <label>ENTER PERIODS</label>
                         <select id="setting-periods">
@@ -180,28 +184,43 @@
                     <h2><i data-lucide="sliders"></i> PREFERRED PERIODS</h2>
                 </div>
                 <section class="row card" id="row-preferences">
-                    <div class="input-group">
-                        <label>SUBJECT</label>
-                        <select id="pref-subject">
-                            <option value="">-- Select --</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
-                        <label>TEACHER</label>
-                        <select id="pref-teacher">
-                            <option value="">-- Any / Select --</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
+
+                    <!-- RULE TYPE — always visible FIRST -->
+                    <div class="input-group" style="flex: 1 1 100%;">
                         <label>RULE TYPE</label>
                         <select id="pref-type">
                             <option value="allowed">ALLOWED</option>
                             <option value="not_allowed">NOT ALLOWED</option>
-                            <option value="specific">SPECIFIC DAY & PERIOD</option>
-                            <option value="clubbed">CLUBBED CLASSES</option>
+                            <option value="specific">SPECIFIC DAY &amp; PERIOD</option>
+                            <option value="clubbed_classes">CLUBBED CLASSES</option>
+                            <option value="clubbed_subjects">CLUBBED SUBJECTS</option>
                             <option value="class_teacher_subject">CLASS TEACHER 1ST PERIOD SUBJECT</option>
                         </select>
                     </div>
+
+                    <!-- Pair-1 badge — shown only for clubbed_subjects -->
+                    <div id="pref-pair1-label" style="display:none; flex: 1 1 100%; align-items:center; gap:0.6rem;">
+                        <span class="pair-badge pair-badge-1">PAIR 1</span>
+                        <span style="font-size:0.8rem; color:var(--text-muted);">Subject + Teacher who takes the 1st subject</span>
+                    </div>
+
+                    <!-- SUBJECT -->
+                    <div class="input-group">
+                        <label id="lbl-pref-subject">SUBJECT</label>
+                        <select id="pref-subject">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+
+                    <!-- TEACHER -->
+                    <div class="input-group">
+                        <label id="lbl-pref-teacher">TEACHER</label>
+                        <select id="pref-teacher">
+                            <option value="">-- Any / Select --</option>
+                        </select>
+                    </div>
+
+                    <!-- DAY -->
                     <div class="input-group" id="pref-day-group">
                         <label>DAY</label>
                         <select id="pref-day">
@@ -213,8 +232,10 @@
                             <option value="Friday">Friday</option>
                         </select>
                     </div>
+
+                    <!-- PERIOD(S) -->
                     <div class="input-group" id="pref-period-group">
-                        <label>PERIOD(S)</label>
+                        <label id="lbl-pref-period">PERIOD(S)</label>
                         <div class="sub-input">
                             <select id="pref-period-select" style="flex: 1;">
                                 <!-- Dynamic options -->
@@ -222,30 +243,52 @@
                             <button type="button" id="add-pref-period" class="btn-small">Add</button>
                         </div>
                         <ul id="temp-pref-periods" class="tag-list small" style="margin-top: 0.5rem;"></ul>
+                        <span id="pref-period-hint" style="display:none; font-size:0.72rem; color:var(--accent); margin-top:4px;">
+                            ⚠ Select exactly ONE specific period for this rule.
+                        </span>
                     </div>
+
+                    <!-- SINGLE PERIOD Dropdown -->
+                    <div class="input-group" id="pref-period-single-group" style="display: none;">
+                        <label id="lbl-pref-period-single">PERIOD</label>
+                        <select id="pref-period-single-select">
+                            <!-- Dynamic options -->
+                        </select>
+                    </div>
+
+                    <!-- CLASSES — shown for clubbed rules -->
                     <div class="input-group" id="pref-clubbed-group" style="display: none;">
                         <label>CLASSES <span style="font-size:0.7rem;opacity:0.6;">(comma separated)</span></label>
                         <input type="text" id="pref-clubbed-classes" placeholder="e.g. 5A, 5B">
                     </div>
+
+                    <!-- PAIR 2 block — shown only for clubbed_subjects -->
+                    <div id="pref-second-pair-group" style="display:none; flex: 1 1 100%; background: rgba(14,165,233,0.06); border: 1px solid rgba(14,165,233,0.25); border-left: 4px solid var(--secondary); border-radius: 12px; padding: 1.2rem; gap: 1rem; flex-wrap: wrap;">
+                        <div style="flex: 1 1 100%; display:flex; align-items:center; gap:0.6rem;">
+                            <span class="pair-badge pair-badge-2">PAIR 2</span>
+                            <span style="font-size:0.8rem; color:var(--text-muted);">Subject + Teacher who takes the 2nd subject simultaneously</span>
+                        </div>
+                        <div class="input-group" style="flex: 1; min-width:180px;">
+                            <label>SUBJECT 2</label>
+                            <select id="pref-subject-2">
+                                <option value="">-- Select --</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="flex: 1; min-width:180px;">
+                            <label>TEACHER 2</label>
+                            <select id="pref-teacher-2">
+                                <option value="">-- Select --</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <button type="button" id="save-preference" class="btn-primary" style="margin-top: auto;">SAVE RULE <i data-lucide="check-circle"></i></button>
                 </section>
                 <div class="data-list-container">
                     <ul id="preference-list" class="data-cards"></ul>
                 </div>
 
-                <!-- Finalize Section -->
-                <div class="section-title">
-                    <h2><i data-lucide="zap"></i> FINALIZE</h2>
-                </div>
-                <section class="row card" style="justify-content: center; padding: 2rem;">
-                    <div style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
-                        <button id="btn-generate" class="btn-primary" style="font-size: 1.2rem; padding: 1rem 3rem;" onclick="triggerPayment(generateTimetable)">
-                            <i data-lucide="zap"></i> GENERATE TIMETABLE
-                        </button>
-                        <div id="countdown-generate" class="countdown-mini" style="font-size: 1rem; padding: 5px 15px;"></div>
-                        <p style="color: var(--text-muted); font-size: 0.8rem;">Click to process all rules and generate your timetable.</p>
-                    </div>
-                </section>
+
 
                 <!-- Row 5: Output -->
                 <div class="section-title">
@@ -261,7 +304,6 @@
                             <button id="btn-class-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
                             <button id="btn-class-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
                         </div>
-                        <div id="countdown-pdf-class" class="countdown-mini"></div>
                     </div>
                     <div class="output-card card">
                         <label>TEACHERS TIMETABLE</label>
@@ -272,14 +314,13 @@
                             <button id="btn-teacher-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
                             <button id="btn-teacher-pdf" class="btn-primary" style="flex:1;"><i data-lucide="download"></i> PDF</button>
                         </div>
-                        <div id="countdown-pdf-teacher" class="countdown-mini"></div>
                     </div>
                     <div class="output-card card">
                         <label>SCHOOL TIME TABLE</label>
                         <div style="display:flex; gap:0.5rem; width:100%; margin-top:10px;">
-                            <button id="btn-school-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
-                            <button id="btn-school-pdf" class="btn-primary" style="flex:1;">CLICK HERE</button>
-                        </div>
+                             <button id="btn-school-preview" class="btn-secondary" style="flex:1;"><i data-lucide="eye"></i> Show</button>
+                             <button id="btn-school-pdf" class="btn-primary" style="flex:1;">CLICK HERE</button>
+                         </div>
                         <small style="color: var(--text-muted); margin-top: 5px;">ALL ARE PDF</small>
                     </div>
                 </section>
@@ -291,21 +332,7 @@
         </div>
     </div>
 
-    <!-- Payment Modal -->
-    <div id="payment-modal" class="modal">
-        <div class="modal-content card">
-            <h2>Scan and Pay to Download</h2>
-            <p style="margin: 0.5rem 0; color: var(--danger); font-weight: 700;">Payment is done only after checking the preview</p>
-            <p style="margin: 1rem 0; color: var(--text-muted);">Please scan the QR code below using Google Pay (or any UPI app) and pay <strong>₹50.00</strong> to download the timetable.</p>
-            <div class="qr-container" style="text-align: center; margin: 1.5rem 0;">
-                <img id="gpay-qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=YOUR_UPI_ID@bank%26pn=TimetableGenerator%26am=50.00%26cu=INR" alt="GPay QR Code" style="border-radius: 10px; border: 4px solid var(--border); padding: 10px; background: white;">
-            </div>
-            <div class="modal-actions" style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
-                <button id="btn-cancel-payment" class="btn-secondary">Cancel</button>
-                <button id="btn-confirm-payment" class="btn-primary">I Have Paid (Download)</button>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Preview Modal -->
     <div id="preview-modal" class="modal">
@@ -533,7 +560,10 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+
+
+
+    <script src="app.js?v=2026.05.23.3"></script>
     <script>
         lucide.createIcons();
     </script>

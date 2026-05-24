@@ -1,3 +1,12 @@
+// Global error catcher — surfaces any silent JS crash as a visible toast
+window.onerror = function(msg, src, line, col, err) {
+    const text = `JS ERROR: ${msg} (line ${line})`;
+    console.error(text, err);
+    // Show toast if function exists
+    if (typeof showToast === 'function') showToast(text, 'error');
+    return false;
+};
+
 // State Management
 let state = {
     settings: {
@@ -47,6 +56,7 @@ const els = {
     prefType: document.getElementById('pref-type'),
     prefDay: document.getElementById('pref-day'),
     prefPeriodSelect: document.getElementById('pref-period-select'),
+    prefPeriodSingleSelect: document.getElementById('pref-period-single-select'),
     tempPrefList: document.getElementById('temp-pref-periods'),
     prefClubbedClasses: document.getElementById('pref-clubbed-classes'),
     preferenceList: document.getElementById('preference-list'),
@@ -54,7 +64,13 @@ const els = {
     // Groups for toggling visibility
     prefDayGroup: document.getElementById('pref-day-group'),
     prefPeriodGroup: document.getElementById('pref-period-group'),
+    prefPeriodSingleGroup: document.getElementById('pref-period-single-group'),
     prefClubbedGroup: document.getElementById('pref-clubbed-group'),
+    prefSecondPairGroup: document.getElementById('pref-second-pair-group'),
+    prefSubject2: document.getElementById('pref-subject-2'),
+    prefTeacher2: document.getElementById('pref-teacher-2'),
+    loadingModal: null,
+    loadingStatus: null,
     
     // Preview Modal
     previewModal: document.getElementById('preview-modal'),
@@ -149,18 +165,52 @@ async function init() {
     
     els.prefType.addEventListener('change', (e) => {
         const val = e.target.value;
-        if (val === 'clubbed') {
-            els.prefDayGroup.style.display = 'none';
+        const pair1Label   = document.getElementById('pref-pair1-label');
+        const periodHint   = document.getElementById('pref-period-hint');
+        const lblSubject   = document.getElementById('lbl-pref-subject');
+        const lblTeacher   = document.getElementById('lbl-pref-teacher');
+
+        // Reset labels
+        if (lblSubject) lblSubject.textContent = 'SUBJECT';
+        if (lblTeacher) lblTeacher.textContent = 'TEACHER';
+        if (pair1Label) pair1Label.style.display = 'none';
+        if (periodHint) periodHint.style.display = 'none';
+
+        if (val === 'clubbed_classes') {
+            if (lblSubject) lblSubject.textContent = 'SUBJECT (taken in both classes)';
+            if (lblTeacher) lblTeacher.textContent = 'TEACHER (who takes both classes)';
+            if (periodHint) periodHint.style.display = 'block';
+            els.prefDayGroup.style.display = 'flex';
             els.prefPeriodGroup.style.display = 'none';
+            els.prefPeriodSingleGroup.style.display = 'flex';
             els.prefClubbedGroup.style.display = 'flex';
+            els.prefSecondPairGroup.style.display = 'none';
+        } else if (val === 'clubbed_subjects') {
+            if (pair1Label) pair1Label.style.display = 'flex';
+            if (periodHint) periodHint.style.display = 'block';
+            els.prefDayGroup.style.display = 'flex';
+            els.prefPeriodGroup.style.display = 'none';
+            els.prefPeriodSingleGroup.style.display = 'flex';
+            els.prefClubbedGroup.style.display = 'flex';
+            els.prefSecondPairGroup.style.display = 'flex';
         } else if (val === 'class_teacher_subject') {
             els.prefDayGroup.style.display = 'none';
             els.prefPeriodGroup.style.display = 'none';
+            els.prefPeriodSingleGroup.style.display = 'none';
             els.prefClubbedGroup.style.display = 'none';
+            els.prefSecondPairGroup.style.display = 'none';
+        } else if (val === 'specific') {
+            els.prefDayGroup.style.display = 'flex';
+            els.prefPeriodGroup.style.display = 'none';
+            els.prefPeriodSingleGroup.style.display = 'flex';
+            els.prefClubbedGroup.style.display = 'none';
+            els.prefSecondPairGroup.style.display = 'none';
         } else {
             els.prefDayGroup.style.display = 'flex';
             els.prefPeriodGroup.style.display = 'flex';
+            els.prefPeriodSingleGroup.style.display = 'none';
             els.prefClubbedGroup.style.display = 'none';
+            els.prefSecondPairGroup.style.display = 'none';
         }
     });
     
@@ -170,16 +220,17 @@ async function init() {
 
     // Set initial visibility for Preferred Periods
     els.prefPeriodGroup.style.display = 'flex';
+    els.prefPeriodSingleGroup.style.display = 'none';
     
-    document.getElementById('btn-class-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('class')); };
-    document.getElementById('btn-teacher-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('teacher')); };
-    document.getElementById('btn-school-pdf').onclick = (e) => { e.preventDefault(); triggerPayment(() => exportPDF('school')); };
+    document.getElementById('btn-class-pdf').onclick = (e) => { e.preventDefault(); try { exportPDF('class'); } catch(err) { showToast('PDF Error: ' + err.message, 'error'); console.error(err); } };
+    document.getElementById('btn-teacher-pdf').onclick = (e) => { e.preventDefault(); try { exportPDF('teacher'); } catch(err) { showToast('PDF Error: ' + err.message, 'error'); console.error(err); } };
+    document.getElementById('btn-school-pdf').onclick = (e) => { e.preventDefault(); try { exportPDF('school'); } catch(err) { showToast('PDF Error: ' + err.message, 'error'); console.error(err); } };
 
     // Preview
-    document.getElementById('btn-class-preview').onclick = (e) => { e.preventDefault(); showPreview('class'); };
-    document.getElementById('btn-teacher-preview').onclick = (e) => { e.preventDefault(); showPreview('teacher'); };
-    document.getElementById('btn-school-preview').onclick = (e) => { e.preventDefault(); showPreview('school'); };
-    
+    document.getElementById('btn-class-preview').onclick = (e) => { e.preventDefault(); try { showPreview('class'); } catch(err) { showToast('Preview Error: ' + err.message, 'error'); console.error(err); } };
+    document.getElementById('btn-teacher-preview').onclick = (e) => { e.preventDefault(); try { showPreview('teacher'); } catch(err) { showToast('Preview Error: ' + err.message, 'error'); console.error(err); } };
+    document.getElementById('btn-school-preview').onclick = (e) => { e.preventDefault(); try { showPreview('school'); } catch(err) { showToast('Preview Error: ' + err.message, 'error'); console.error(err); } };
+
     if (els.btnClosePreview) {
         els.btnClosePreview.onclick = (e) => {
             e.preventDefault();
@@ -232,7 +283,6 @@ async function init() {
     startHeartbeat();
     syncDbUsers();                                       // load all persisted users
     setInterval(syncDbUsers, 5000);                      // poll every 5 s for real-time updates
-    setInterval(updateCountdowns, 1000);
     renderAll();
     checkAndTriggerUserLog();
 }
@@ -255,17 +305,6 @@ function startHeartbeat() {
                 if (res.yourIp) {
                     state.userIp = res.yourIp;
                 }
-                if (res.paymentEnabled !== undefined) {
-                    state.paymentEnabled = res.paymentEnabled;
-                }
-                if (res.paidTimestamp) {
-                    const key = `${state.settings.schoolName || 'Guest'}_${state.userIp}`;
-                    state.paymentRecords[key] = res.paidTimestamp;
-                } else {
-                    const key = `${state.settings.schoolName || 'Guest'}_${state.userIp}`;
-                    delete state.paymentRecords[key];
-                }
-                checkPaymentStatus();
                 updateConnectionStatus(true);
             } else {
                 updateConnectionStatus(false);
@@ -288,14 +327,14 @@ function updateConnectionStatus(isConnected) {
         dot.style.background = '#10b981';
         dot.style.boxShadow = '0 0 8px #10b981';
         if (dbStatus) {
-            dbStatus.innerText = "SQLITE ONLINE";
+            dbStatus.innerText = "MONGODB ONLINE";
             dbStatus.className = "db-status online";
         }
     } else {
         dot.style.background = '#ef4444';
         dot.style.boxShadow = '0 0 8px #ef4444';
         if (dbStatus) {
-            dbStatus.innerText = "OFFLINE";
+            dbStatus.innerText = "MONGODB OFFLINE";
             dbStatus.className = "db-status offline";
         }
     }
@@ -368,7 +407,7 @@ function handleAdminLogin() {
     }
 }
 
-function changeAdminPassword() {
+async function changeAdminPassword() {
     const newPass = document.getElementById('new-admin-password').value.trim();
     if (newPass.length < 4) {
         showToast("Password must be at least 4 characters.");
@@ -376,7 +415,8 @@ function changeAdminPassword() {
     }
     state.adminPassword = newPass;
     save();
-    showToast("Admin password updated successfully!", "success");
+    await saveAdminStateToServer();
+    showToast("Admin password updated & saved to server!", "success");
     document.getElementById('new-admin-password').value = '';
 }
 
@@ -462,7 +502,11 @@ async function loadAdminStateFromServer() {
             state.usageLogs = serverState.usageLogs || [];
             state.paymentRecords = serverState.paymentRecords || {};
             state.adminIps = serverState.adminIps || [];
-            
+
+            // Track real MongoDB connection status from server
+            state.dbConnected = serverState.dbConnected !== false;
+            state.dbError = serverState.dbError || null;
+
             // Strictly enforce payment toggle from server
             if (serverState.paymentEnabled !== undefined) {
                 state.paymentEnabled = (serverState.paymentEnabled === true || serverState.paymentEnabled === "true");
@@ -475,11 +519,16 @@ async function loadAdminStateFromServer() {
                 state.userIp = serverState.yourIp;
             }
             if (serverState.adminPassword) state.adminPassword = serverState.adminPassword;
-            updateConnectionStatus(true);
+
+            // Update status indicator based on real DB state
+            updateConnectionStatus(state.dbConnected);
         } else {
+            state.dbConnected = false;
             updateConnectionStatus(false);
         }
     } catch (e) {
+        state.dbConnected = false;
+        updateConnectionStatus(false);
         console.error("Failed to load admin state from server", e);
     }
 }
@@ -796,8 +845,6 @@ function renderSidebarStats() {
     `;
 }
 
-// Deprecated: Duplicate definition removed. Teacher workload summary is rendered by renderSummaryTable() below.
-
 function setupAntiScreenshot() {
     // Prevent right click on preview modal content
     if (els.previewModal) {
@@ -889,55 +936,19 @@ function renderAll() {
         updateSubjectStdSelect();
         updatePrefSubjectSelect();
         updatePrefTeacherSelect();
+        updatePrefSubject2Select();
+        updatePrefTeacher2Select();
         updatePrefPeriodOptions();
         updateDataLists();
         renderSidebarStats();
         renderSummaryTable();
-        checkPaymentStatus();
         if(window.lucide) lucide.createIcons();
     } catch(e) {
         console.error("Rendering error", e);
     }
 }
 
-function checkPaymentStatus() {
-    if (!els.paymentBanner) return;
-    
-    const school = (state.settings.schoolName || '').trim();
-    if (!school) {
-        els.paymentBanner.style.display = 'none';
-        return;
-    }
-
-    const key = `${school}_${state.userIp}`;
-    const paymentTimestamp = state.paymentRecords[key];
-    
-    if (paymentTimestamp) {
-        const now = Date.now();
-        const diffDays = (now - paymentTimestamp) / (1000 * 60 * 60 * 24);
-        
-        if (diffDays <= 3) {
-            const remaining = (3 - diffDays).toFixed(1);
-            els.paymentBanner.style.display = 'block';
-            els.paymentBanner.className = 'payment-banner valid';
-            els.paymentBanner.innerHTML = `✓ Payment verified for ${school}. You can edit and update for ${remaining} more days.`;
-        } else {
-            els.paymentBanner.style.display = 'block';
-            els.paymentBanner.className = 'payment-banner expired';
-            els.paymentBanner.innerHTML = `! Edit window expired for ${school}. Please make payment first to download/edit.`;
-        }
-    } else {
-        // Check if any other school was paid for from this IP
-        const otherPayments = Object.keys(state.paymentRecords).filter(k => k.endsWith(`_${state.userIp}`));
-        if (otherPayments.length > 0) {
-            els.paymentBanner.style.display = 'block';
-            els.paymentBanner.className = 'payment-banner expired';
-            els.paymentBanner.innerHTML = `! In this IP address only one school can make timetable. Make payment first for ${school}.`;
-        } else {
-            els.paymentBanner.style.display = 'none';
-        }
-    }
-}
+function checkPaymentStatus() {}
 
 function updateDataLists() {
     const subjects = new Set();
@@ -1253,6 +1264,22 @@ function updatePrefTeacherSelect() {
     if (teachers.includes(currentVal)) els.prefTeacher.value = currentVal;
 }
 
+function updatePrefSubject2Select() {
+    const subjects = Array.from(new Set(state.subjectRules.map(r => r.name)));
+    const currentVal = els.prefSubject2.value;
+    els.prefSubject2.innerHTML = '<option value="">-- Select --</option>' + 
+        subjects.map(s => `<option value="${s}">${s}</option>`).join('');
+    if (subjects.includes(currentVal)) els.prefSubject2.value = currentVal;
+}
+
+function updatePrefTeacher2Select() {
+    const teachers = Array.from(new Set(state.teacherRules.map(t => t.name)));
+    const currentVal = els.prefTeacher2.value;
+    els.prefTeacher2.innerHTML = '<option value="">-- Select --</option>' + 
+        teachers.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (teachers.includes(currentVal)) els.prefTeacher2.value = currentVal;
+}
+
 function updatePrefPeriodOptions() {
     const count = parseInt(state.settings.periods) || 8;
     const currentVal = els.prefPeriodSelect.value;
@@ -1260,6 +1287,14 @@ function updatePrefPeriodOptions() {
     for(let i=1; i<=count; i++) html += `<option value="${i}">Period ${i}</option>`;
     els.prefPeriodSelect.innerHTML = html;
     if (currentVal && (currentVal === 'all' || parseInt(currentVal) <= count)) els.prefPeriodSelect.value = currentVal;
+
+    if (els.prefPeriodSingleSelect) {
+        const currentSingleVal = els.prefPeriodSingleSelect.value;
+        let singleHtml = '<option value="">-- Select Period --</option>';
+        for(let i=1; i<=count; i++) singleHtml += `<option value="${i}">Period ${i}</option>`;
+        els.prefPeriodSingleSelect.innerHTML = singleHtml;
+        if (currentSingleVal && parseInt(currentSingleVal) <= count) els.prefPeriodSingleSelect.value = currentSingleVal;
+    }
 }
 
 function addTempPrefPeriod() {
@@ -1308,21 +1343,59 @@ function savePreference() {
     const type = els.prefType.value;
     const day = els.prefDay.value;
     const teacher = els.prefTeacher.value;
-    let periods = [...state.tempPrefPeriods];
+    
+    const isSinglePeriodType = (type === 'specific' || type === 'clubbed_classes' || type === 'clubbed_subjects');
+    let periods = [];
+    if (isSinglePeriodType) {
+        const val = els.prefPeriodSingleSelect.value;
+        if (!val) return showToast("Select a period first.");
+        periods = [parseInt(val)];
+    } else {
+        periods = [...state.tempPrefPeriods];
+    }
+    
     const clubbedRaw = els.prefClubbedClasses ? els.prefClubbedClasses.value.trim() : '';
     
-    if (!subj) return showToast("Select a subject first.");
+    if (!subj && type !== 'clubbed_classes') return showToast("Select a subject first.");
     
-    if (type === 'clubbed') {
-        if (!teacher) return showToast("Select a teacher for clubbed classes.");
-        if (!clubbedRaw) return showToast("Enter clubbed classes.");
+    if (type === 'clubbed_classes') {
+        // Clubbed Classes: one teacher, same subject, multiple classes, SAME specific period
+        if (!teacher) return showToast("Select the teacher for Clubbed Classes.");
+        if (!subj) return showToast("Select the subject that is being taken in all clubbed classes.");
+        if (!clubbedRaw) return showToast("Enter clubbed classes (comma separated).");
         const clubbedClasses = clubbedRaw.split(',').map(s => s.trim()).filter(s => s);
-        if (clubbedClasses.length < 2) return showToast("Enter at least 2 classes for clubbing.");
+        if (clubbedClasses.length < 2) return showToast("Enter at least 2 classes for Clubbed Classes.");
+        if (day === 'any') return showToast("Select a specific Day for Clubbed Classes (not ALL DAY).");
+        if (periods.length !== 1) return showToast("Select exactly ONE specific Period for Clubbed Classes.");
         
         state.preferences.push({
             id: Date.now(),
-            subj, type, teacher, clubbedClasses
+            type,
+            subj,
+            teacher,
+            clubbedClasses,
+            day,
+            period: periods[0]
         });
+
+    } else if (type === 'clubbed_subjects') {
+        // Clubbed Subjects: two subject+teacher pairs, same classes, same specific period
+        const subj2 = els.prefSubject2.value;
+        const teacher2 = els.prefTeacher2.value;
+        if (!teacher) return showToast("Select Teacher 1 for Pair 1.");
+        if (!subj2) return showToast("Select Subject 2 for Pair 2.");
+        if (!teacher2) return showToast("Select Teacher 2 for Pair 2.");
+        if (!clubbedRaw) return showToast("Enter the classes where this clubbing applies.");
+        const clubbedClasses = clubbedRaw.split(',').map(s => s.trim()).filter(s => s);
+        if (clubbedClasses.length < 1) return showToast("Enter at least one class for Clubbed Subjects.");
+        if (day === 'any') return showToast("Select a specific Day for Clubbed Subjects.");
+        if (periods.length !== 1) return showToast("Select exactly ONE specific Period for Clubbed Subjects.");
+
+        state.preferences.push({
+            id: Date.now(),
+            subj, type, teacher, subj2, teacher2, clubbedClasses, day, period: periods[0]
+        });
+
     } else if (type === 'class_teacher_subject') {
         if (!teacher) return showToast("Select a teacher for this rule.");
         state.preferences.push({
@@ -1341,8 +1414,9 @@ function savePreference() {
     
     save();
     state.tempPrefPeriods = [];
+    if (els.prefPeriodSingleSelect) els.prefPeriodSingleSelect.value = '';
     if (els.prefClubbedClasses) els.prefClubbedClasses.value = '';
-    showToast(`Rule for ${subj} saved!`, 'success');
+    showToast(`Rule saved successfully!`, 'success');
     renderAll();
 }
 
@@ -1360,11 +1434,22 @@ function renderPreferences() {
         li.className = 'data-card';
         const teacherText = p.teacher ? `<span style="color:var(--secondary); font-weight:700;">[${p.teacher}]</span>` : '';
         
-        if (p.type === 'clubbed') {
+        if (p.type === 'clubbed_classes') {
             li.innerHTML = `
                 <div class="card-info">
-                    <strong>${p.subj} ${teacherText}</strong>
-                    <p>CLUBBED: ${p.clubbedClasses.join(', ')}</p>
+                    <strong><span style="color:var(--primary);">${p.subj || '(subject)'}</span> ${teacherText}</strong>
+                    <p>CLUBBED CLASSES: <strong>${p.clubbedClasses.join(', ')}</strong></p>
+                    <p style="color:var(--accent); font-size:0.8rem;">📅 ${p.day} &nbsp;|&nbsp; ⏰ Period ${p.period}</p>
+                </div>
+                <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
+            `;
+        } else if (p.type === 'clubbed_subjects') {
+            li.innerHTML = `
+                <div class="card-info">
+                    <strong style="color:var(--primary);">${p.subj} <span style="color:var(--text-muted);font-weight:400;">by</span> ${p.teacher}</strong>
+                    <strong style="color:var(--secondary);">+ ${p.subj2} <span style="color:var(--text-muted);font-weight:400;">by</span> ${p.teacher2}</strong>
+                    <p>CLUBBED SUBJECTS in <strong>${p.clubbedClasses.join(', ')}</strong></p>
+                    <p style="color:var(--accent); font-size:0.8rem;">📅 ${p.day} &nbsp;|&nbsp; ⏰ Period ${p.period}</p>
                 </div>
                 <button onclick="removePreference(${p.id})" class="btn-icon danger"><i data-lucide="trash-2"></i></button>
             `;
@@ -1625,7 +1710,7 @@ function validateDataBeforeGeneration() {
         return false;
     }
 
-    const maxWeeklyPeriods = 5 * (parseInt(state.periods) || 8);
+    const maxWeeklyPeriods = 5 * (parseInt(state.settings.periods) || 8);
     
     // 1. Collect all classes
     let classes = new Set();
@@ -1644,7 +1729,7 @@ function validateDataBeforeGeneration() {
         });
         
         if (totalClassPeriods > maxWeeklyPeriods) {
-            showToast(`ERROR: Class '${c}' has a total of ${totalClassPeriods} allotted subject periods, which exceeds the maximum limit of ${maxWeeklyPeriods} periods per week (5 days x ${state.periods} periods/day). Please reduce the allotted periods!`, 'error');
+            showToast(`ERROR: Class '${c}' has a total of ${totalClassPeriods} allotted subject periods, which exceeds the maximum limit of ${maxWeeklyPeriods} periods per week (5 days x ${state.settings.periods} periods/day). Please reduce the allotted periods!`, 'error');
             return false;
         }
     }
@@ -1673,67 +1758,62 @@ function validateDataBeforeGeneration() {
     return true;
 }
 
+
 // --- Timetable Generation ---
 function generateTimetable() {
-    if (!validateDataBeforeGeneration()) {
-        return;
-    }
-    // Collect all classes
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+    // Collect all classes from all sources
     let classes = new Set();
     state.subjectRules.forEach(r => classes.add(r.std));
     state.teacherRules.forEach(t => {
         if(t.charge) classes.add(t.charge);
         t.classes.forEach(c => classes.add(c.std));
     });
-    
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    classes = Array.from(classes);
+
     let masterGrid = {};
     let teacherGrid = {};
-    
+    let prePlacedCounts = {};
+
     classes.forEach(c => {
         masterGrid[c] = {};
         days.forEach(d => masterGrid[c][d] = {});
     });
-    
+
     state.teacherRules.forEach(t => {
         teacherGrid[t.name] = {};
         days.forEach(d => teacherGrid[t.name][d] = {});
     });
-    
+
+    if (!validateDataBeforeGeneration()) {
+        return { masterGrid, teacherGrid, days, classes };
+    }
+
     // Build requirements list and apply Class Teacher Rule
-    let reqs = [];
-    let prePlacedCounts = {}; // { teacher_std_subj: count }
-    
-    // First, satisfy the Class Teacher & Reallocation rule: 1st period Monday-Friday
-    
-    // 1. Identify all class teachers and their preferred 1st period subject
-    let classTeachers = {}; // { className: { name: teacherName, subj: subjectName, pCount: pCount, assignedDaysCount: N } }
+    let classTeachers = {}; // { className: [ { name: teacherName, subj: subjectName, pCount: pCount } ] }
     state.teacherRules.forEach(t => {
         if (t.charge && masterGrid[t.charge]) {
-            let subj = 'Class Teacher';
+            if (!classTeachers[t.charge]) classTeachers[t.charge] = [];
+            
             // Check if there is a class_teacher_subject preference for this teacher
             const pref = state.preferences.find(p => p.type === 'class_teacher_subject' && p.teacher === t.name);
             if (pref) {
-                subj = pref.subj;
+                let rule = state.subjectRules.find(r => r.std === t.charge && r.name === pref.subj);
+                let pCount = rule ? parseInt(rule.periods) : 5;
+                classTeachers[t.charge].push({ name: t.name, subj: pref.subj, pCount: pCount });
             } else {
-                let teacherTakes = t.classes.find(c => c.std === t.charge);
-                if (teacherTakes) {
-                    subj = teacherTakes.subj;
+                // Find all subjects this teacher takes in this class
+                let subjectsTaken = t.classes.filter(c => c.std === t.charge);
+                if (subjectsTaken.length > 0) {
+                    subjectsTaken.forEach(st => {
+                        let rule = state.subjectRules.find(r => r.std === t.charge && r.name === st.subj);
+                        let pCount = rule ? parseInt(rule.periods) : 5;
+                        classTeachers[t.charge].push({ name: t.name, subj: st.subj, pCount: pCount });
+                    });
                 }
+                // If they take NO subjects and NO preference is set, they get NO 1st periods (as per user request "if that teacher teaches subject... thats all")
             }
-            
-            let pCount = 5; // Default if not taking subject or no rule
-            if (subj !== 'Class Teacher') {
-                let rule = state.subjectRules.find(r => r.std === t.charge && r.name === subj);
-                pCount = rule ? parseInt(rule.periods) : 5;
-            }
-            
-            classTeachers[t.charge] = {
-                name: t.name,
-                subj: subj,
-                pCount: pCount,
-                assignedDaysCount: Math.min(pCount, 5)
-            };
         }
     });
     
@@ -1757,26 +1837,42 @@ function generateTimetable() {
         });
     });
     
-    // 3. First pass: Assign Class Teachers to their first period days (up to min(pCount, 5))
+    // 3. First pass: Assign Class Teachers to their first period days (strictly up to their workload, max 5 per class)
     let firstPeriodAssignments = {}; // { className: { dayName: { teacher, subj } } }
     classes.forEach(c => {
         firstPeriodAssignments[c] = {};
     });
     
     classes.forEach(c => {
-        let ct = classTeachers[c];
-        if (ct) {
-            let N = ct.assignedDaysCount;
-            for (let i = 0; i < N; i++) {
+        let duties = classTeachers[c] || [];
+        let classAssignedSlots = 0;
+        
+        duties.forEach(duty => {
+            let pToAssign = duty.pCount;
+            for (let i = 0; i < days.length && pToAssign > 0 && classAssignedSlots < days.length; i++) {
                 let day = days[i];
-                firstPeriodAssignments[c][day] = { teacher: ct.name, subj: ct.subj };
-                // Decrement remaining periods for this teacher in this class
-                let wl = classWorkloads[c].find(w => w.teacher === ct.name && w.subj === ct.subj);
-                if (wl) {
-                    wl.remaining--;
+                if (!firstPeriodAssignments[c][day]) {
+                    // Check if teacher is free (not already assigned 1st period in another class)
+                    let isBusy = false;
+                    Object.values(firstPeriodAssignments).forEach(otherClassAssignments => {
+                        if (otherClassAssignments[day] && otherClassAssignments[day].teacher === duty.name) {
+                            isBusy = true;
+                        }
+                    });
+
+                    if (!isBusy) {
+                        firstPeriodAssignments[c][day] = { teacher: duty.name, subj: duty.subj };
+                        pToAssign--;
+                        classAssignedSlots++;
+                        // Decrement remaining periods in workload
+                        let wl = classWorkloads[c].find(w => w.teacher === duty.name && w.subj === duty.subj);
+                        if (wl) {
+                            wl.remaining--;
+                        }
+                    }
                 }
             }
-        }
+        });
     });
     
     // 4. Second pass: Allocate other teachers of the class for the remaining days
@@ -1824,11 +1920,12 @@ function generateTimetable() {
                     } else {
                         // Fallback 2: Absolutely no teacher is free. Fall back to Class Teacher themselves since they are free
                         let ct = classTeachers[c];
-                        if (ct) {
-                            let wl = classWorkloads[c] ? classWorkloads[c].find(w => w.teacher === ct.name && w.subj === ct.subj) : null;
-                            let useSubj = (wl && wl.remaining > 0) ? ct.subj : 'Class Teacher';
-                            firstPeriodAssignments[c][day] = { teacher: ct.name, subj: useSubj };
-                            if (wl && useSubj === ct.subj) {
+                        if (ct && ct.length > 0) {
+                            let firstCt = ct[0];
+                            let wl = classWorkloads[c] ? classWorkloads[c].find(w => w.teacher === firstCt.name && w.subj === firstCt.subj) : null;
+                            let useSubj = (wl && wl.remaining > 0) ? firstCt.subj : 'Class Teacher';
+                            firstPeriodAssignments[c][day] = { teacher: firstCt.name, subj: useSubj };
+                            if (wl && useSubj === firstCt.subj) {
                                 wl.remaining--;
                             }
                         } else {
@@ -1958,49 +2055,92 @@ function generateTimetable() {
         }
     });
 
-    // Pass 0.5: Group Clubbed Classes
-    let clubbedReqs = [];
-    let clubbedRules = state.preferences.filter(p => p.type === 'clubbed');
-    
-    clubbedRules.forEach(rule => {
-        let matchingReqsByStd = {};
-        rule.clubbedClasses.forEach(std => matchingReqsByStd[std] = []);
+    // Pass 0.2: Clubbed Subjects Placement
+    let clubbedSubjRules = state.preferences.filter(p => p.type === 'clubbed_subjects');
+    clubbedSubjRules.forEach(rule => {
+        const { subj, teacher, subj2, teacher2, clubbedClasses, day, period } = rule;
         
-        let remainingOtherReqs = [];
-        otherReqs.forEach(req => {
-            if (req.teacher === rule.teacher && req.subj === rule.subj && rule.clubbedClasses.includes(req.std)) {
-                matchingReqsByStd[req.std].push(req);
-            } else {
-                remainingOtherReqs.push(req);
-            }
-        });
-        otherReqs = remainingOtherReqs;
+        // Ensure grids exist for all classes
+        const allClassesExist = clubbedClasses.every(c => masterGrid[c]);
+        if (!allClassesExist || !teacherGrid[teacher] || !teacherGrid[teacher2]) return;
+
+        // Place if all are free
+        let allFree = clubbedClasses.every(c => !masterGrid[c][day][period]) && 
+                      !teacherGrid[teacher][day][period] && 
+                      !teacherGrid[teacher2][day][period];
         
-        let counts = rule.clubbedClasses.map(std => matchingReqsByStd[std] ? matchingReqsByStd[std].length : 0);
-        let minCount = Math.min(...counts);
-        
-        if (minCount > 0) {
-            for (let i = 0; i < minCount; i++) {
-                clubbedReqs.push({
-                    isClubbed: true,
-                    teacher: rule.teacher,
-                    subj: rule.subj,
-                    stds: rule.clubbedClasses
-                });
-                rule.clubbedClasses.forEach(std => matchingReqsByStd[std].pop());
-            }
+        if (allFree) {
+            clubbedClasses.forEach(c => {
+                // CLASS timetable: show only subjects, NO teacher names
+                masterGrid[c][day][period] = `${subj} / ${subj2}`;
+            });
+            // TEACHER timetable: each teacher sees only their own subject + which classes
+            teacherGrid[teacher][day][period] = `${clubbedClasses.join(', ')} (${subj})`;
+            teacherGrid[teacher2][day][period] = `${clubbedClasses.join(', ')} (${subj2})`;
+            
+            // Mark as pre-placed so requirements won't double-place
+            clubbedClasses.forEach(c => {
+                prePlacedCounts[`${teacher}_${c}_${subj}`] = (prePlacedCounts[`${teacher}_${c}_${subj}`] || 0) + 1;
+                prePlacedCounts[`${teacher2}_${c}_${subj2}`] = (prePlacedCounts[`${teacher2}_${c}_${subj2}`] || 0) + 1;
+            });
         }
-        
-        rule.clubbedClasses.forEach(std => {
-            if(matchingReqsByStd[std]) otherReqs.push(...matchingReqsByStd[std]);
-        });
     });
 
-    // Place Clubbed Reqs First
-    clubbedReqs.forEach(req => {
-        if (!tryPlace(req, true)) {
-            tryPlace(req, false);
+    // Pass 0.5: Clubbed Classes — same teacher, same subject, multiple classes, same period
+    let clubbedReqs = [];
+    let clubbedClassRules = state.preferences.filter(p => p.type === 'clubbed_classes');
+    let remainingOtherReqs = [...otherReqs];
+
+    clubbedClassRules.forEach(rule => {
+        const { teacher, subj: ruleSubj, clubbedClasses, day: ruleDay, period: rulePeriod } = rule;
+
+        // Find and remove matching requirements from the pool (one per clubbed class)
+        let subjectFound = null;
+        let removedCount = 0;
+
+        clubbedClasses.forEach(std => {
+            const idx = remainingOtherReqs.findIndex(r =>
+                r.teacher === teacher && r.std === std &&
+                (!ruleSubj || r.subj === ruleSubj)
+            );
+            if (idx !== -1) {
+                const removed = remainingOtherReqs.splice(idx, 1)[0];
+                removedCount++;
+                if (!subjectFound) subjectFound = removed.subj;
+            }
+        });
+
+        const subjToUse = ruleSubj || subjectFound;
+        if (!subjToUse || removedCount === 0) return;
+
+        // If a specific day+period is set, place directly
+        if (rulePeriod && ruleDay && ruleDay !== 'any') {
+            const allFree = clubbedClasses.every(c => masterGrid[c] && !masterGrid[c][ruleDay][rulePeriod]) &&
+                            teacherGrid[teacher] && !teacherGrid[teacher][ruleDay][rulePeriod];
+
+            if (allFree) {
+                clubbedClasses.forEach(c => {
+                    if (masterGrid[c]) masterGrid[c][ruleDay][rulePeriod] = `${subjToUse} (${teacher})`;
+                });
+                if (teacherGrid[teacher]) {
+                    teacherGrid[teacher][ruleDay][rulePeriod] = `${clubbedClasses.join(', ')} (${subjToUse})`;
+                }
+            } else {
+                // Slot occupied — fall back to tryPlace
+                const req = { isClubbed: true, teacher, subj: subjToUse, stds: clubbedClasses };
+                if (!tryPlace(req, true)) tryPlace(req, false);
+            }
+        } else {
+            // No specific period — queue for tryPlace
+            clubbedReqs.push({ isClubbed: true, teacher, subj: subjToUse, stds: clubbedClasses });
         }
+    });
+
+    otherReqs = remainingOtherReqs;
+
+    // Place queued clubbed reqs (those without a specific period)
+    clubbedReqs.forEach(req => {
+        if (!tryPlace(req, true)) tryPlace(req, false);
     });
 
     // 2. Split otherReqs into Pass 1 (Spread) and Pass 2 (Overflow)
@@ -2054,209 +2194,224 @@ function generateTimetable() {
 
 // --- PDF Exporting ---
 function exportPDF(type) {
+    // Resolve jsPDF safely every time (CDN may have loaded after page init)
+    const JsPDF = (window.jsPDF) || (window.jspdf && window.jspdf.jsPDF);
+    if (!JsPDF) {
+        showToast('PDF library not loaded. Please check your internet connection and refresh.', 'error');
+        return;
+    }
+
     const { masterGrid, teacherGrid, days, classes } = generateTimetable();
-    
+
+    // Auto-populate the output dropdowns from fresh data so the user
+    // doesn't have to click Generate first before using Show/PDF.
+    if (classes.length === 0) {
+        showToast('No timetable data. Please add Subjects & Teachers first, then Generate.', 'error');
+        return;
+    }
+    const sortedClasses = [...classes].sort();
+    const sortedTeachers = Object.keys(teacherGrid).sort();
+    const prevClass = els.outClassSelect.value;
+    const prevTeacher = els.outTeacherSelect.value;
+    els.outClassSelect.innerHTML = '<option value="">-- Select --</option><option value="ALL_CLASSES">ALL CLASSES</option>' +
+        sortedClasses.map(c => `<option value="${c}">${c}</option>`).join('');
+    els.outTeacherSelect.innerHTML = '<option value="">-- Select --</option><option value="ALL_TEACHERS">ALL TEACHERS</option>' +
+        sortedTeachers.map(t => `<option value="${t}">${t}</option>`).join('');
+    // Restore previous selection if still valid
+    if (prevClass && [...els.outClassSelect.options].some(o => o.value === prevClass)) els.outClassSelect.value = prevClass;
+    if (prevTeacher && [...els.outTeacherSelect.options].some(o => o.value === prevTeacher)) els.outTeacherSelect.value = prevTeacher;
+
     let docs = [];
-    
+
     if (type === 'class') {
         const cls = els.outClassSelect.value;
-        if(!cls) return showToast("Select a class first!");
+        if (!cls) {
+            // Auto-select first class if nothing chosen
+            if (sortedClasses.length > 0) {
+                els.outClassSelect.value = sortedClasses[0];
+            } else {
+                return showToast('No classes found. Please add Subjects & Teachers first.', 'error');
+            }
+        }
+        const selectedCls = els.outClassSelect.value;
+        if (!selectedCls) return showToast('Select a class first!', 'error');
         
-        if (cls === 'ALL_CLASSES') {
-            const doc = new jsPDF('l', 'mm', 'a4');
+        if (selectedCls === 'ALL_CLASSES') {
+            const doc = new JsPDF('l', 'mm', 'a4');
             const schoolName = state.settings.schoolName || 'School';
             const year = state.settings.year || 'Export';
-            
-            classes.sort().forEach((c, index) => {
+
+            sortedClasses.forEach((c, index) => {
                 if (index > 0) doc.addPage();
                 doc.setFontSize(22);
                 doc.text(schoolName, 14, 20);
                 doc.setFontSize(16);
                 doc.text(`Class: ${c} | Year: ${year}`, 14, 30);
-                
+
                 let headRow = ['Day'];
-                for(let p=1; p<=state.settings.periods; p++) {
-                    headRow.push(`Period ${p}`);
-                }
+                for (let p = 1; p <= state.settings.periods; p++) headRow.push(`Period ${p}`);
                 let body = [];
                 days.forEach(day => {
                     let row = [day.substring(0, 3)];
-                    for(let p=1; p<=state.settings.periods; p++) {
-                        row.push(masterGrid[c][day][p] || '-');
+                    for (let p = 1; p <= state.settings.periods; p++) {
+                        row.push((masterGrid[c] && masterGrid[c][day] && masterGrid[c][day][p]) || '-');
                     }
                     body.push(row);
                 });
-                doc.autoTable({
-                    startY: 40,
-                    head: [headRow],
-                    body: body,
-                    theme: 'grid',
-                    headStyles: { fillColor: [249, 115, 22] },
-                    styles: { fontSize: 10, cellPadding: 4, halign: 'center' }
-                });
+                doc.autoTable({ startY: 40, head: [headRow], body, theme: 'grid', headStyles: { fillColor: [249, 115, 22] }, styles: { fontSize: 10, cellPadding: 4, halign: 'center' } });
             });
             docs.push(doc);
         } else {
-            docs.push(createPDFDoc(cls, 'Class', masterGrid[cls], days));
+            docs.push(createPDFDoc(selectedCls, 'Class', masterGrid[selectedCls], days, JsPDF));
         }
     } 
     else if (type === 'teacher') {
         const tchr = els.outTeacherSelect.value;
-        if(!tchr) return showToast("Select a teacher first!");
-        
-        if (tchr === 'ALL_TEACHERS') {
-            const doc = new jsPDF('l', 'mm', 'a4');
+        if (!tchr) {
+            if (sortedTeachers.length > 0) {
+                els.outTeacherSelect.value = sortedTeachers[0];
+            } else {
+                return showToast('No teachers found. Please add teachers first.', 'error');
+            }
+        }
+        const selectedTchr = els.outTeacherSelect.value;
+        if (!selectedTchr) return showToast('Select a teacher first!', 'error');
+
+        if (selectedTchr === 'ALL_TEACHERS') {
+            const doc = new JsPDF('l', 'mm', 'a4');
             const schoolName = state.settings.schoolName || 'School';
             const year = state.settings.year || 'Export';
-            const sortedTeachers = Object.keys(teacherGrid).sort();
-            
+
             sortedTeachers.forEach((tName, index) => {
                 if (index > 0) doc.addPage();
                 doc.setFontSize(22);
                 doc.text(schoolName, 14, 20);
                 doc.setFontSize(16);
                 doc.text(`Teacher: ${tName} | Year: ${year}`, 14, 30);
-                
+
                 let headRow = ['Day'];
-                for(let p=1; p<=state.settings.periods; p++) {
-                    headRow.push(`Period ${p}`);
-                }
+                for (let p = 1; p <= state.settings.periods; p++) headRow.push(`Period ${p}`);
                 let body = [];
                 days.forEach(day => {
                     let row = [day.substring(0, 3)];
-                    for(let p=1; p<=state.settings.periods; p++) {
-                        row.push(teacherGrid[tName][day][p] || '-');
+                    for (let p = 1; p <= state.settings.periods; p++) {
+                        row.push((teacherGrid[tName] && teacherGrid[tName][day] && teacherGrid[tName][day][p]) || '-');
                     }
                     body.push(row);
                 });
-                doc.autoTable({
-                    startY: 40,
-                    head: [headRow],
-                    body: body,
-                    theme: 'grid',
-                    headStyles: { fillColor: [249, 115, 22] },
-                    styles: { fontSize: 10, cellPadding: 4, halign: 'center' }
-                });
+                doc.autoTable({ startY: 40, head: [headRow], body, theme: 'grid', headStyles: { fillColor: [249, 115, 22] }, styles: { fontSize: 10, cellPadding: 4, halign: 'center' } });
             });
             docs.push(doc);
         } else {
-            docs.push(createPDFDoc(tchr, 'Teacher', teacherGrid[tchr], days));
+            docs.push(createPDFDoc(selectedTchr, 'Teacher', teacherGrid[selectedTchr], days, JsPDF));
         }
     }
     else if (type === 'school') {
-        if(classes.length === 0) return showToast("No classes to generate!");
-        
-        const doc = new jsPDF('l', 'mm', 'a4');
+        const doc = new JsPDF('l', 'mm', 'a4');
         const schoolName = state.settings.schoolName || 'School';
         const year = state.settings.year || 'Export';
-        
+
         days.forEach((day, index) => {
             if (index > 0) doc.addPage();
-            
             doc.setFontSize(22);
             doc.text(schoolName, 14, 20);
-            
             doc.setFontSize(16);
             doc.text(`Day: ${day} | Year: ${year}`, 14, 30);
-            
             const body = [];
-            classes.forEach(cls => {
+            sortedClasses.forEach(cls => {
                 let row = [cls];
-                for(let p=1; p<=state.settings.periods; p++) {
-                    row.push(masterGrid[cls][day][p] || '-');
+                for (let p = 1; p <= state.settings.periods; p++) {
+                    row.push((masterGrid[cls] && masterGrid[cls][day] && masterGrid[cls][day][p]) || '-');
                 }
                 body.push(row);
             });
-            
             let headRow = ['Class'];
-            for(let p=1; p<=state.settings.periods; p++) {
-                headRow.push(`Period ${p}`);
-            }
-            
-            doc.autoTable({
-                startY: 40,
-                head: [headRow],
-                body: body,
-                theme: 'grid',
-                headStyles: { fillColor: [139, 92, 246] },
-                styles: { fontSize: 9, cellPadding: 3, halign: 'center' }
-            });
+            for (let p = 1; p <= state.settings.periods; p++) headRow.push(`Period ${p}`);
+            doc.autoTable({ startY: 40, head: [headRow], body, theme: 'grid', headStyles: { fillColor: [139, 92, 246] }, styles: { fontSize: 9, cellPadding: 3, halign: 'center' } });
         });
-        
+
         const safeSchoolName = schoolName.replace(/[^a-z0-9]/gi, '_');
         doc.save(`${safeSchoolName}_Master_Timetable.pdf`);
         return;
     }
     
     // Download individual PDF
-    if (type === 'class') {
-        const cls = els.outClassSelect.value;
-        if (cls === 'ALL_CLASSES') {
-            docs[0].save(`Timetable_All_Classes.pdf`);
-        } else {
+    if (docs.length > 0) {
+        if (type === 'class') {
+            const cls = els.outClassSelect.value;
             const safeName = cls.replace(/[^a-z0-9]/gi, '_');
-            docs[0].save(`Timetable_Class_${safeName}.pdf`);
-        }
-    } else if (type === 'teacher') {
-        const tchr = els.outTeacherSelect.value;
-        if (tchr === 'ALL_TEACHERS') {
-            docs[0].save(`Timetable_All_Teachers.pdf`);
-        } else {
+            docs[0].save(cls === 'ALL_CLASSES' ? 'Timetable_All_Classes.pdf' : `Timetable_Class_${safeName}.pdf`);
+        } else if (type === 'teacher') {
+            const tchr = els.outTeacherSelect.value;
             const safeName = tchr.replace(/[^a-z0-9]/gi, '_');
-            docs[0].save(`Timetable_Teacher_${safeName}.pdf`);
+            docs[0].save(tchr === 'ALL_TEACHERS' ? 'Timetable_All_Teachers.pdf' : `Timetable_Teacher_${safeName}.pdf`);
         }
     }
     logUsage('pdf');
 }
 
-function createPDFDoc(title, typeName, dataGrid, days) {
-    const doc = new jsPDF('l', 'mm', 'a4');
+function createPDFDoc(title, typeName, dataGrid, days, JsPDF) {
+    // JsPDF passed in to avoid CDN timing issues
+    const Ctor = JsPDF || window.jsPDF || (window.jspdf && window.jspdf.jsPDF);
+    const doc = new Ctor('l', 'mm', 'a4');
     const schoolName = state.settings.schoolName || 'School';
     const year = state.settings.year || 'Export';
-    
+
     doc.setFontSize(22);
     doc.text(schoolName, 14, 20);
-    
     doc.setFontSize(16);
     doc.text(`${typeName}: ${title} | Year: ${year}`, 14, 30);
-    
+
     let headRow = ['Day'];
-    for(let p=1; p<=state.settings.periods; p++) {
-        headRow.push(`Period ${p}`);
-    }
-    
+    for (let p = 1; p <= state.settings.periods; p++) headRow.push(`Period ${p}`);
+
     let body = [];
     days.forEach(day => {
         let row = [day.substring(0, 3)];
-        for(let p=1; p<=state.settings.periods; p++) {
-            row.push(dataGrid[day][p] || '-');
+        for (let p = 1; p <= state.settings.periods; p++) {
+            row.push((dataGrid && dataGrid[day] && dataGrid[day][p]) || '-');
         }
         body.push(row);
     });
-    
-    doc.autoTable({
-        startY: 40,
-        head: [headRow],
-        body: body,
-        theme: 'grid',
-        headStyles: { fillColor: [249, 115, 22] },
-        styles: { fontSize: 10, cellPadding: 4, halign: 'center' }
-    });
-    
+
+    doc.autoTable({ startY: 40, head: [headRow], body, theme: 'grid', headStyles: { fillColor: [249, 115, 22] }, styles: { fontSize: 10, cellPadding: 4, halign: 'center' } });
     return doc;
 }
 
 // --- Timetable Preview ---
+
 function showPreview(type) {
     const { masterGrid, teacherGrid, days, classes } = generateTimetable();
     const periods = state.settings.periods || 8;
-    
+
+    // Auto-populate the output dropdowns from freshly-generated data
+    // so Show works even if Generate was never explicitly clicked.
+    if (classes.length === 0 && type !== 'school') {
+        showToast('No timetable data. Please add Subjects & Teachers first, then Generate.', 'error');
+        return;
+    }
+    const sortedClasses = [...classes].sort();
+    const sortedTeachers = Object.keys(teacherGrid).sort();
+    const prevClass = els.outClassSelect.value;
+    const prevTeacher = els.outTeacherSelect.value;
+    els.outClassSelect.innerHTML = '<option value="">-- Select --</option><option value="ALL_CLASSES">ALL CLASSES</option>' +
+        sortedClasses.map(c => `<option value="${c}">${c}</option>`).join('');
+    els.outTeacherSelect.innerHTML = '<option value="">-- Select --</option><option value="ALL_TEACHERS">ALL TEACHERS</option>' +
+        sortedTeachers.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (prevClass && [...els.outClassSelect.options].some(o => o.value === prevClass)) els.outClassSelect.value = prevClass;
+    if (prevTeacher && [...els.outTeacherSelect.options].some(o => o.value === prevTeacher)) els.outTeacherSelect.value = prevTeacher;
+
     let html = '';
     let title = '';
-    
+
     if (type === 'class') {
-        const cls = els.outClassSelect.value;
-        if(!cls) return showToast("Select a class first!");
+        let cls = els.outClassSelect.value;
+        // Auto-select first class if nothing chosen
+        if (!cls && sortedClasses.length > 0) {
+            els.outClassSelect.value = sortedClasses[0];
+            cls = sortedClasses[0];
+        }
+        if (!cls) return showToast('No classes available. Please add Subjects & Teachers first.', 'error');
         
         if (cls === 'ALL_CLASSES') {
             title = `All Classes Timetables`;
@@ -2274,7 +2429,7 @@ function showPreview(type) {
                 days.forEach(day => {
                     html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
                     for(let p=1; p<=periods; p++) {
-                        html += `<td>${masterGrid[c][day][p] || '-'}</td>`;
+                        html += `<td>${(masterGrid[c] && masterGrid[c][day] && masterGrid[c][day][p]) || '-'}</td>`;
                     }
                     html += `</tr>`;
                 });
@@ -2295,7 +2450,7 @@ function showPreview(type) {
             days.forEach(day => {
                 html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
                 for(let p=1; p<=periods; p++) {
-                    html += `<td>${masterGrid[cls][day][p] || '-'}</td>`;
+                    html += `<td>${(masterGrid[cls] && masterGrid[cls][day] && masterGrid[cls][day][p]) || '-'}</td>`;
                 }
                 html += `</tr>`;
             });
@@ -2303,8 +2458,12 @@ function showPreview(type) {
         }
     } 
     else if (type === 'teacher') {
-        const tchr = els.outTeacherSelect.value;
-        if(!tchr) return showToast("Select a teacher first!");
+        let tchr = els.outTeacherSelect.value;
+        if (!tchr && sortedTeachers.length > 0) {
+            els.outTeacherSelect.value = sortedTeachers[0];
+            tchr = sortedTeachers[0];
+        }
+        if (!tchr) return showToast('No teachers available. Please add teachers first.', 'error');
         
         if (tchr === 'ALL_TEACHERS') {
             title = `All Teachers Timetables`;
@@ -2323,7 +2482,7 @@ function showPreview(type) {
                 days.forEach(day => {
                     html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
                     for(let p=1; p<=periods; p++) {
-                        html += `<td>${teacherGrid[tName][day][p] || '-'}</td>`;
+                        html += `<td>${(teacherGrid[tName] && teacherGrid[tName][day] && teacherGrid[tName][day][p]) || '-'}</td>`;
                     }
                     html += `</tr>`;
                 });
@@ -2344,7 +2503,7 @@ function showPreview(type) {
             days.forEach(day => {
                 html += `<tr><td><strong>${day.substring(0,3)}</strong></td>`;
                 for(let p=1; p<=periods; p++) {
-                    html += `<td>${teacherGrid[tchr][day][p] || '-'}</td>`;
+                    html += `<td>${(teacherGrid[tchr] && teacherGrid[tchr][day] && teacherGrid[tchr][day][p]) || '-'}</td>`;
                 }
                 html += `</tr>`;
             });
@@ -2352,7 +2511,7 @@ function showPreview(type) {
         }
     }
     else if (type === 'school') {
-        if(classes.length === 0) return showToast("No classes to generate!");
+        if (classes.length === 0) return showToast('No classes to generate! Please add Subjects & Teachers first.', 'error');
         title = `School Timetable`;
         
         html = '';
@@ -2370,7 +2529,7 @@ function showPreview(type) {
             classes.sort().forEach(cls => {
                 html += `<tr><td><strong>${cls}</strong></td>`;
                 for(let p=1; p<=periods; p++) {
-                    html += `<td>${masterGrid[cls][day][p] || '-'}</td>`;
+                    html += `<td>${(masterGrid[cls] && masterGrid[cls][day] && masterGrid[cls][day][p]) || '-'}</td>`;
                 }
                 html += `</tr>`;
             });
@@ -2381,6 +2540,7 @@ function showPreview(type) {
     if (els.previewTitle) els.previewTitle.innerText = title;
     if (els.previewScrollContainer) els.previewScrollContainer.innerHTML = html;
     if (els.previewModal) els.previewModal.classList.add('show');
+    
     logUsage('preview');
 }
 
@@ -2388,125 +2548,11 @@ function showPreview(type) {
 // --- Payment Integration ---
 let pendingPaymentCallback = null;
 
-document.getElementById('btn-cancel-payment').onclick = () => {
-    document.getElementById('payment-modal').classList.remove('show');
-    pendingPaymentCallback = null;
-};
-
-document.getElementById('btn-confirm-payment').onclick = async () => {
-    const school = (state.settings.schoolName || '').trim();
-    if (!school) {
-        showToast("Enter School Name before paying.");
-        return;
-    }
-
-    const key = `${school}_${state.userIp}`;
-    state.paymentRecords[key] = Date.now();
-    save();
-    await saveAdminStateToServer();
-    
-    document.getElementById('payment-modal').classList.remove('show');
-    if (pendingPaymentCallback) {
-        pendingPaymentCallback();
-        pendingPaymentCallback = null;
-    }
-    await logUsage('payment');
-    renderAll();
-};
-
 function triggerPayment(onSuccess) {
-    const school = (state.settings.schoolName || '').trim();
-    if (!school) {
-        showToast("Please enter School Name in Settings first.");
-        return;
-    }
-
-    // Check if window is EXPIRED (already more than 3 days)
-    const key = `${school}_${state.userIp}`;
-    const paymentTimestamp = state.paymentRecords[key];
-    const now = Date.now();
-    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-    
-    // Check if Global Payment is DISABLED
-    if (state.paymentEnabled === false) {
-        onSuccess();
-        return;
-    }
-
-    // Check if IP is Admin Trusted
-    const isAdminIp = (state.adminIps || []).includes(state.userIp);
-    if (isAdminIp) {
-        onSuccess();
-        return;
-    }
-
-    // Check if valid payment exists (within 3 days)
-    if (paymentTimestamp && (now - paymentTimestamp) <= threeDaysMs) {
-        onSuccess();
-        return;
-    }
-
-    pendingPaymentCallback = onSuccess;
-    document.getElementById('payment-modal').classList.add('show');
+    if (typeof onSuccess === 'function') onSuccess();
 }
 
-function updateCountdowns() {
-    const school = (state.settings.schoolName || '').trim();
-    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-    const now = Date.now();
-
-    const updateBtn = (btnId, timerId) => {
-        const btn = document.getElementById(btnId);
-        const timer = document.getElementById(timerId);
-        if (!btn || !timer) return;
-
-        if (!school) {
-            timer.style.display = 'none';
-            return;
-        }
-
-        const key = `${school}_${state.userIp}`;
-        const pmtTime = state.paymentRecords[key];
-
-        if (state.paymentEnabled === false || (state.adminIps || []).includes(state.userIp)) {
-            timer.innerHTML = "PRO ACCESS ACTIVE";
-            timer.style.display = 'inline-block';
-            timer.style.color = '#10b981';
-            timer.style.background = 'rgba(16, 185, 129, 0.1)';
-            btn.classList.remove('btn-disabled');
-            return;
-        }
-
-        if (pmtTime) {
-            const diff = threeDaysMs - (now - pmtTime);
-            if (diff > 0) {
-                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                const secs = Math.floor((diff % (1000 * 60)) / 1000);
-                
-                timer.innerHTML = `EXPIRES IN: ${days}d ${hours}h ${mins}m ${secs}s`;
-                timer.style.display = 'inline-block';
-                timer.style.color = 'var(--secondary)';
-                timer.style.background = 'rgba(14, 165, 233, 0.1)';
-                btn.classList.remove('btn-disabled');
-            } else {
-                timer.innerHTML = "WINDOW EXPIRED";
-                timer.style.display = 'inline-block';
-                timer.style.color = 'var(--danger)';
-                timer.style.background = 'rgba(239, 68, 68, 0.1)';
-                btn.classList.add('btn-disabled');
-            }
-        } else {
-            timer.style.display = 'none';
-            btn.classList.remove('btn-disabled');
-        }
-    };
-
-    updateBtn('btn-generate', 'countdown-generate');
-    updateBtn('btn-class-pdf', 'countdown-pdf-class');
-    updateBtn('btn-teacher-pdf', 'countdown-pdf-teacher');
-}
+function updateCountdowns() {}
 
 // Boot
 init();

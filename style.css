@@ -1084,10 +1084,6 @@ input:focus, select:focus {
     filter: grayscale(1);
 }
 
-    display: inline-block;
-    animation: pulse-simple 1.5s infinite;
-}
-
 @keyframes pulse-simple {
     0% { transform: scale(0.8); opacity: 0.5; }
     50% { transform: scale(1.2); opacity: 1; }
@@ -1741,3 +1737,116 @@ header {
         border-radius: 16px !important;
     }
 }
+
+/* ══════════════════════════════════════════════════════
+   PAIR BADGES — Clubbed Subject Rule UI
+══════════════════════════════════════════════════════ */
+.pair-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 14px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.pair-badge-1 {
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    color: var(--primary);
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.2);
+}
+
+.pair-badge-2 {
+    background: rgba(14, 165, 233, 0.15);
+    border: 1px solid rgba(14, 165, 233, 0.4);
+    color: var(--secondary);
+    box-shadow: 0 0 10px rgba(14, 165, 233, 0.2);
+}
+
+
+
+
+/* Clubbed Subjects UI tweaks */
+#pref-second-pair-group {
+    background: rgba(14, 165, 233, 0.05);
+    border-radius: 12px;
+    margin-top: 1rem;
+    animation: slideDown 0.3s ease-out;
+}
+
+#pref-second-pair-group label {
+    color: var(--secondary);
+}
+
+#pref-second-pair-group select:focus {
+    border-color: var(--secondary);
+    box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.2);
+}
+
+/* Sleek, attractive, medium sized generate button */
+.btn-generate {
+    background: linear-gradient(135deg, var(--primary) 0%, #f59e0b 50%, var(--secondary) 100%) !important;
+    background-size: 200% auto !important;
+    color: white !important;
+    font-size: 1.05rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+    padding: 0.8rem 2.2rem !important;
+    height: auto !important;
+    min-height: 50px !important;
+    border-radius: 50px !important; /* Premium rounded pill */
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    box-shadow: 0 4px 20px rgba(249, 115, 22, 0.35), 0 4px 20px rgba(14, 165, 233, 0.25) !important;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    text-transform: uppercase !important;
+    animation: btnPulseGlow 2.5s infinite ease-in-out !important;
+}
+
+.btn-generate:hover {
+    background-position: right center !important;
+    transform: translateY(-3px) scale(1.03) !important;
+    box-shadow: 0 8px 30px rgba(249, 115, 22, 0.55), 0 8px 30px rgba(14, 165, 233, 0.4) !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.btn-generate:active {
+    transform: translateY(1px) scale(0.98) !important;
+    box-shadow: 0 4px 15px rgba(249, 115, 22, 0.3) !important;
+}
+
+.btn-generate i {
+    font-size: 1.15rem;
+    transition: all 0.3s ease;
+}
+
+.btn-generate:hover i {
+    animation: zapPulse 0.8s infinite alternate;
+}
+
+@keyframes btnPulseGlow {
+    0% {
+        box-shadow: 0 0 15px rgba(249, 115, 22, 0.35), 0 0 15px rgba(14, 165, 233, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 25px rgba(249, 115, 22, 0.55), 0 0 25px rgba(14, 165, 233, 0.35);
+    }
+    100% {
+        box-shadow: 0 0 15px rgba(249, 115, 22, 0.35), 0 0 15px rgba(14, 165, 233, 0.2);
+    }
+}
+
+@keyframes zapPulse {
+    0% {
+        transform: scale(1) rotate(0deg);
+        filter: drop-shadow(0 0 2px white);
+    }
+    100% {
+        transform: scale(1.3) rotate(15deg);
+        filter: drop-shadow(0 0 8px #f59e0b);
+    }
+}
+
+
