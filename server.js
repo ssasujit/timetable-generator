@@ -31,15 +31,34 @@ function getLocalIp() {
 const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mastergrid';
 console.log(`Connecting to MongoDB...`);
 mongoose.set('bufferCommands', false);
-mongoose.connect(mongoURI, { serverSelectionTimeoutMS: 3000 })
+
+function connectMongoDB() {
+    mongoose.connect(mongoURI, {
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 10000
+    })
     .then(() => {
         console.log('MongoDB Connected Successfully!');
         runSQLiteMigration(); // Automatic SQLite data migration
     })
     .catch(err => {
         console.error('MongoDB Connection Error:', err.message);
-        console.log('Please make sure MongoDB is running locally or MONGODB_URI is correctly configured.');
+        console.log('Retrying connection in 15 seconds...');
+        setTimeout(connectMongoDB, 15000);
     });
+}
+
+mongoose.connection.on('disconnected', () => {
+    console.warn('MongoDB disconnected. Attempting to reconnect...');
+    setTimeout(connectMongoDB, 5000);
+});
+
+mongoose.connection.on('connected', () => {
+    console.log('MongoDB connection established.');
+});
+
+connectMongoDB();
 
 
 // Mongoose Schemas & Models
