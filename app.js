@@ -28,6 +28,16 @@ let state = {
     userIp: 'unknown'
 };
 
+// UI State (for collapsibility)
+let uiState = {
+    showAllSubjects: false,
+    showAllPreferences: false
+};
+
+let cachedTimetable = null;
+
+
+
 // DOM Elements
 const els = {
     periods: document.getElementById('setting-periods'),
@@ -35,6 +45,7 @@ const els = {
     year: document.getElementById('setting-year'),
     
     subjName: document.getElementById('subject-name'),
+    subjClubbed: document.getElementById('subject-clubbed'),
     subjPeriods: document.getElementById('subject-periods'),
     subjStd: document.getElementById('subject-std'),
     subjTableContainer: document.getElementById('subject-table-container'),
@@ -819,7 +830,7 @@ function renderSidebarStats() {
     
     const totalTeachers = state.teacherRules.length;
     const totalSubjects = state.subjectRules.length;
-    const totalPeriods = state.subjectRules.reduce((acc, r) => acc + (r.periods || 0), 0);
+    const totalPeriods = calculateTotalPeriods(state.subjectRules);
     const uniqueClasses = new Set(state.subjectRules.map(r => r.std)).size;
     
     container.innerHTML = `
@@ -900,6 +911,8 @@ async function checkAndTriggerUserLog() {
 
 function save() {
     localStorage.setItem('timetable_dashboard_state', JSON.stringify(state));
+    // Invalidate timetable cache whenever data changes so next preview/PDF is fresh
+    cachedTimetable = null;
     showAutoSave();
 }
 
@@ -995,6 +1008,7 @@ function addSubjectRule() {
     const nameRaw = els.subjName.value.trim();
     const periods = parseInt(els.subjPeriods.value);
     const stdRaw = els.subjStd.value.trim();
+    const clubbedRaw = els.subjClubbed ? els.subjClubbed.value.trim() : '';
 
     if (!nameRaw || !periods || !stdRaw) {
         showToast("Please fill Subject(s), Periods, and STD");
@@ -1003,6 +1017,7 @@ function addSubjectRule() {
 
     // Split comma-separated subject names
     const names = nameRaw.split(',').map(s => s.trim()).filter(s => s);
+    const clubbedNames = clubbedRaw.split(',').map(s => s.trim()).filter(s => s);
 
     // Resolve class list
     let stds;
@@ -1018,17 +1033,40 @@ function addSubjectRule() {
 
     // Create one entry per subject × per class
     let addedCount = 0;
-    names.forEach(name => {
-        stds.forEach(std => {
-            const exists = state.subjectRules.some(r => r.name === name && r.std === std);
-            if (!exists) {
-                state.subjectRules.push({ id: Date.now() + Math.random(), name, periods, std });
-                addedCount++;
-            }
-        });
+    stds.forEach(std => {
+        if (clubbedNames.length > 0) {
+            // Clubbed subjects creation: bi-directional connection
+            const allSubs = [...names, ...clubbedNames];
+            allSubs.forEach(sub => {
+                const otherSubs = allSubs.filter(s => s !== sub);
+                const exists = state.subjectRules.find(r => r.name === sub && r.std === std);
+                if (exists) {
+                    exists.periods = periods;
+                    exists.clubbed = otherSubs[0];
+                } else {
+                    state.subjectRules.push({
+                        id: Date.now() + Math.random(),
+                        name: sub,
+                        periods,
+                        std,
+                        clubbed: otherSubs[0]
+                    });
+                    addedCount++;
+                }
+            });
+        } else {
+            // Normal subjects creation
+            names.forEach(name => {
+                const exists = state.subjectRules.some(r => r.name === name && r.std === std);
+                if (!exists) {
+                    state.subjectRules.push({ id: Date.now() + Math.random(), name, periods, std });
+                    addedCount++;
+                }
+            });
+        }
     });
 
-    if (addedCount === 0) {
+    if (addedCount === 0 && clubbedNames.length === 0) {
         showToast("All subjects already exist for the selected class(es).");
         return;
     }
@@ -1036,18 +1074,34 @@ function addSubjectRule() {
     save();
 
     els.subjName.value = '';
+    if (els.subjClubbed) els.subjClubbed.value = '';
     els.subjPeriods.value = 5;
     els.subjStd.value = '';
-    showToast(`✓ Added ${addedCount} subject-class entries successfully!`, 'success');
+    showToast(`✓ Added/Updated subject-class entries successfully!`, 'success');
     renderAll();
 }
 
 function removeSubject(id) {
-    state.subjectRules = state.subjectRules.filter(r => r.id !== id);
+    const ruleToRemove = state.subjectRules.find(r => r.id === id);
+    if (ruleToRemove && ruleToRemove.clubbed) {
+        state.subjectRules = state.subjectRules.filter(r => 
+            !(r.std === ruleToRemove.std && (r.name === ruleToRemove.name || r.name === ruleToRemove.clubbed))
+        );
+    } else {
+        state.subjectRules = state.subjectRules.filter(r => r.id !== id);
+    }
     save();
     renderAll();
 }
 window.removeSubject = removeSubject;
+
+function removeMultipleSubjects(idsStr) {
+    const ids = idsStr.split(',').map(id => parseFloat(id));
+    state.subjectRules = state.subjectRules.filter(r => !ids.includes(r.id));
+    save();
+    renderAll();
+}
+window.removeMultipleSubjects = removeMultipleSubjects;
 
 function removeSubjectRow(cls) {
     if (confirm(`Are you sure you want to delete all subjects for class ${cls}?`)) {
@@ -1057,6 +1111,70 @@ function removeSubjectRow(cls) {
     }
 }
 window.removeSubjectRow = removeSubjectRow;
+function calculateTotalPeriods(rules) {
+    let total = 0;
+    const counted = new Set();
+
+    rules.forEach(r => {
+        if (counted.has(r.id)) return;
+
+        if (r.clubbed) {
+            const clubbedGroup = rules.filter(rule => 
+                rule.std === r.std && 
+                (rule.name === r.name || rule.name === r.clubbed || rule.clubbed === r.name)
+            );
+            total += r.periods || 0;
+            clubbedGroup.forEach(g => counted.add(g.id));
+        } else {
+            total += r.periods || 0;
+            counted.add(r.id);
+        }
+    });
+    return total;
+}
+
+function getColumnGroups(rules) {
+    const groups = [];
+    const processed = new Set();
+
+    rules.forEach(r => {
+        if (processed.has(r.name)) return;
+
+        if (r.clubbed) {
+            const groupNames = [r.name];
+            const toProcess = [r.clubbed];
+            while (toProcess.length > 0) {
+                const current = toProcess.pop();
+                if (!groupNames.includes(current)) {
+                    groupNames.push(current);
+                    const matchingRule = rules.find(rule => rule.name === current);
+                    if (matchingRule && matchingRule.clubbed && !groupNames.includes(matchingRule.clubbed)) {
+                        toProcess.push(matchingRule.clubbed);
+                    }
+                }
+            }
+            groupNames.sort();
+            const groupKey = groupNames.join('|');
+            if (!groups.some(g => g.key === groupKey)) {
+                groups.push({
+                    type: 'clubbed',
+                    names: groupNames,
+                    key: groupKey
+                });
+            }
+            groupNames.forEach(n => processed.add(n));
+        } else {
+            groups.push({
+                type: 'single',
+                name: r.name,
+                key: r.name
+            });
+            processed.add(r.name);
+        }
+    });
+
+    return groups.sort((a, b) => a.key.localeCompare(b.key));
+}
 
 function renderSubjects() {
     if (!els.subjTableContainer) return;
@@ -1066,7 +1184,12 @@ function renderSubjects() {
     }
 
     const classes = Array.from(new Set(state.subjectRules.map(r => r.std))).sort();
-    const subjects = Array.from(new Set(state.subjectRules.map(r => r.name))).sort();
+    const columnGroups = getColumnGroups(state.subjectRules);
+
+    const needsTruncation = classes.length > 4;
+    const visibleClasses = (needsTruncation && !uiState.showAllSubjects)
+        ? classes.slice(0, 4)
+        : classes;
 
     let html = `
         <div class="subject-grid-wrapper">
@@ -1074,13 +1197,28 @@ function renderSubjects() {
                 <thead>
                     <tr>
                         <th></th>
-                        ${subjects.map(subj => `<th>${subj}</th>`).join('')}
+                        ${columnGroups.map(group => {
+                            if (group.type === 'clubbed') {
+                                const innerHeaders = group.names.map((name, i) => 
+                                    `<div style="flex: 1; padding: 0.5rem 1rem; ${i < group.names.length - 1 ? 'border-right: 1px solid var(--border);' : ''} display: flex; align-items: center; justify-content: center; font-weight: 800; text-transform: uppercase;">${name}</div>`
+                                ).join('');
+                                return `<th style="padding: 0; min-width: 150px; vertical-align: stretch;">
+                                    <div style="display: flex; flex-direction: column; height: 100%;">
+                                        <div style="display: flex; flex: 1;">
+                                            ${innerHeaders}
+                                        </div>
+                                    </div>
+                                </th>`;
+                            } else {
+                                return `<th>${group.name}</th>`;
+                            }
+                        }).join('')}
                     </tr>
                 </thead>
                 <tbody>
     `;
 
-    classes.forEach(cls => {
+    visibleClasses.forEach(cls => {
         html += `<tr>
             <td class="class-name">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; padding-left: 0.5rem;">
@@ -1090,21 +1228,41 @@ function renderSubjects() {
                     </button>
                 </div>
             </td>`;
-        subjects.forEach(subj => {
-            const rule = state.subjectRules.find(r => r.std === cls && r.name === subj);
-            if (rule) {
-                html += `
-                    <td style="text-align:center;">
-                        <div class="period-badge">
-                            <span>${rule.periods}</span>
-                            <button class="btn-del-cell" onclick="removeSubject(${rule.id})" title="Remove">
-                                <i data-lucide="x" style="width:14px; height:14px;"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
+        columnGroups.forEach(group => {
+            if (group.type === 'clubbed') {
+                const rules = state.subjectRules.filter(r => r.std === cls && group.names.includes(r.name));
+                if (rules.length > 0) {
+                    const period = rules[0].periods;
+                    const ruleIds = rules.map(r => r.id).join(',');
+                    html += `
+                        <td style="text-align:center;">
+                            <div class="period-badge">
+                                <span>${period}</span>
+                                <button class="btn-del-cell" onclick="removeMultipleSubjects('${ruleIds}')" title="Remove clubbed subjects">
+                                    <i data-lucide="x" style="width:14px; height:14px;"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                } else {
+                    html += `<td style="text-align:center;"><span class="empty-cell">-</span></td>`;
+                }
             } else {
-                html += `<td style="text-align:center;"><span class="empty-cell">-</span></td>`;
+                const rule = state.subjectRules.find(r => r.std === cls && r.name === group.name);
+                if (rule) {
+                    html += `
+                        <td style="text-align:center;">
+                            <div class="period-badge">
+                                <span>${rule.periods}</span>
+                                <button class="btn-del-cell" onclick="removeSubject(${rule.id})" title="Remove">
+                                    <i data-lucide="x" style="width:14px; height:14px;"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                } else {
+                    html += `<td style="text-align:center;"><span class="empty-cell">-</span></td>`;
+                }
             }
         });
         html += `</tr>`;
@@ -1116,13 +1274,34 @@ function renderSubjects() {
         </div>
     `;
 
-    els.subjTableContainer.innerHTML = html;
+    let buttonHtml = '';
+    if (needsTruncation) {
+        const iconName = uiState.showAllSubjects ? 'chevron-up' : 'chevron-down';
+        const labelText = uiState.showAllSubjects ? 'Show Less ▴' : `Show All (${classes.length} Classes) ▾`;
+        buttonHtml = `
+            <div style="display: flex; justify-content: flex-end; margin-top: 1rem; padding-right: 0.5rem; width: 100%;">
+                <button type="button" onclick="toggleShowAllSubjects()" class="btn-pro-expand">
+                    <span>${labelText}</span>
+                    <i data-lucide="${iconName}"></i>
+                </button>
+            </div>
+        `;
+    }
+
+    els.subjTableContainer.innerHTML = html + buttonHtml;
     
     // Refresh icons since we added new ones
     if(window.lucide) {
         setTimeout(() => lucide.createIcons(), 0);
     }
 }
+
+function toggleShowAllSubjects() {
+    uiState.showAllSubjects = !uiState.showAllSubjects;
+    renderSubjects();
+}
+window.toggleShowAllSubjects = toggleShowAllSubjects;
+
 
 // --- Teacher Rules ---
 function addTempTeacherClass() {
@@ -1344,6 +1523,17 @@ function savePreference() {
     const day = els.prefDay.value;
     const teacher = els.prefTeacher.value;
     
+    // Check if the subject is clubbed when saving a SPECIFIC rule
+    if (type === 'specific' && subj) {
+        const clubbedRule = state.subjectRules.find(r => r.name === subj && r.clubbed);
+        if (clubbedRule) {
+            const msg = `Error: '${subj}' is a clubbed subject (clubbed with '${clubbedRule.clubbed}').\n\nFor clubbed subjects, you must use the 'CLUBBED SUBJECTS' rule type to ensure they are scheduled simultaneously.`;
+            alert(msg);
+            showToast(msg, 'error');
+            return;
+        }
+    }
+    
     const isSinglePeriodType = (type === 'specific' || type === 'clubbed_classes' || type === 'clubbed_subjects');
     let periods = [];
     if (isSinglePeriodType) {
@@ -1388,13 +1578,119 @@ function savePreference() {
         if (!clubbedRaw) return showToast("Enter the classes where this clubbing applies.");
         const clubbedClasses = clubbedRaw.split(',').map(s => s.trim()).filter(s => s);
         if (clubbedClasses.length < 1) return showToast("Enter at least one class for Clubbed Subjects.");
-        if (day === 'any') return showToast("Select a specific Day for Clubbed Subjects.");
+        // Note: day === 'any' (ALL DAY) is now allowed — it creates one entry per weekday automatically
         if (periods.length !== 1) return showToast("Select exactly ONE specific Period for Clubbed Subjects.");
 
-        state.preferences.push({
-            id: Date.now(),
-            subj, type, teacher, subj2, teacher2, clubbedClasses, day, period: periods[0]
-        });
+        // Strict Validation Checks:
+        for (const c of clubbedClasses) {
+            // 1. Check if Subject 1 is defined in class c
+            const rule1 = state.subjectRules.find(r => r.std === c && r.name === subj);
+            if (!rule1) {
+                const msg = `Error: Subject '${subj}' is not defined in class '${c}'.`;
+                alert(msg);
+                showToast(msg, 'error');
+                return;
+            }
+            
+            // 2. Check if Subject 2 is defined in class c
+            const rule2 = state.subjectRules.find(r => r.std === c && r.name === subj2);
+            if (!rule2) {
+                const msg = `Error: Subject '${subj2}' is not defined in class '${c}'.`;
+                alert(msg);
+                showToast(msg, 'error');
+                return;
+            }
+            
+            // 3. Check if they are clubbed together in class c
+            if (rule1.clubbed !== subj2 || rule2.clubbed !== subj) {
+                const msg = `Error: '${subj}' and '${subj2}' are not clubbed together in class '${c}'.`;
+                alert(msg);
+                showToast(msg, 'error');
+                return;
+            }
+            
+            // 4. Check if Teacher 1 is assigned to teach Subject 1 in class c
+            const t1Assigned = state.teacherRules.some(t => 
+                t.name === teacher && t.classes.some(tc => tc.std === c && tc.subj === subj)
+            );
+            if (!t1Assigned) {
+                const msg = `Error: Teacher '${teacher}' is not assigned to teach '${subj}' in class '${c}'.`;
+                alert(msg);
+                showToast(msg, 'error');
+                return;
+            }
+            
+            // 5. Check if Teacher 2 is assigned to teach Subject 2 in class c
+            const t2Assigned = state.teacherRules.some(t => 
+                t.name === teacher2 && t.classes.some(tc => tc.std === c && tc.subj === subj2)
+            );
+            if (!t2Assigned) {
+                const msg = `Error: Teacher '${teacher2}' is not assigned to teach '${subj2}' in class '${c}'.`;
+                alert(msg);
+                showToast(msg, 'error');
+                return;
+            }
+            
+        }
+
+        // Expand ALL DAY (any) → Mon–Fri; a specific day stays as-is
+        const daysToSchedule = (day === 'any')
+            ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+            : [day];
+
+        let addedCount = 0;
+        for (const schedDay of daysToSchedule) {
+            // 6. Check period limit before each individual entry
+            let atLimit = false;
+            let limitClass = '', limitPeriods = 0;
+            for (const c of clubbedClasses) {
+                const rule1 = state.subjectRules.find(r => r.std === c && r.name === subj);
+                const allottedPeriods = rule1 ? (rule1.periods || 0) : 0;
+                const existingCount = state.preferences.filter(p =>
+                    p.type === 'clubbed_subjects' &&
+                    p.clubbedClasses.includes(c) &&
+                    ((p.subj === subj && p.subj2 === subj2) || (p.subj === subj2 && p.subj2 === subj))
+                ).length;
+                if (existingCount >= allottedPeriods) {
+                    atLimit = true;
+                    limitClass = c;
+                    limitPeriods = allottedPeriods;
+                    break;
+                }
+            }
+            if (atLimit) {
+                if (day !== 'any') {
+                    // Single day: show a blocking error popup
+                    const msg = `Error: Class '${limitClass}' only has ${limitPeriods} periods allotted for '${subj} / ${subj2}'. Cannot add more preferred periods!`;
+                    alert(msg);
+                    showToast(msg, 'error');
+                    return;
+                }
+                break; // ALL DAY mode: silently stop when the limit is reached
+            }
+            state.preferences.push({
+                id: Date.now() + Math.random(),
+                subj, type, teacher, subj2, teacher2, clubbedClasses, day: schedDay, period: periods[0]
+            });
+            addedCount++;
+        }
+
+        if (addedCount === 0) {
+            showToast(`Period limit already reached for '${subj} / ${subj2}'. No rules were added.`, 'error');
+            return;
+        }
+
+        // Handle save/feedback here so we can show how many rules were created
+        save();
+        state.tempPrefPeriods = [];
+        if (els.prefPeriodSingleSelect) els.prefPeriodSingleSelect.value = '';
+        if (els.prefClubbedClasses) els.prefClubbedClasses.value = '';
+        const rulesMsg = addedCount > 1
+            ? `✓ ${addedCount} rules created (Mon–Fri Period ${periods[0]})!`
+            : `✓ Rule saved successfully!`;
+        showToast(rulesMsg, 'success');
+        renderAll();
+        return;
 
     } else if (type === 'class_teacher_subject') {
         if (!teacher) return showToast("Select a teacher for this rule.");
@@ -1404,7 +1700,7 @@ function savePreference() {
         });
     } else {
         if (type !== 'specific' && periods.length === 0) return showToast("Add at least one period.");
-        if (type === 'specific' && (day === 'any' || periods.length !== 1)) return showToast("Select a specific Day and exactly ONE Period.");
+        if (type === 'specific' && periods.length !== 1) return showToast("Select exactly ONE Period.");
         
         state.preferences.push({
             id: Date.now(),
@@ -1429,7 +1725,15 @@ window.removePreference = removePreference;
 
 function renderPreferences() {
     els.preferenceList.innerHTML = '';
-    state.preferences.forEach(p => {
+    
+    // Determine visible preferences
+    const totalPrefs = state.preferences.length;
+    const needsTruncation = totalPrefs > 4;
+    const visiblePrefs = (needsTruncation && !uiState.showAllPreferences)
+        ? state.preferences.slice(0, 4)
+        : state.preferences;
+
+    visiblePrefs.forEach(p => {
         const li = document.createElement('li');
         li.className = 'data-card';
         const teacherText = p.teacher ? `<span style="color:var(--secondary); font-weight:700;">[${p.teacher}]</span>` : '';
@@ -1478,7 +1782,35 @@ function renderPreferences() {
         }
         els.preferenceList.appendChild(li);
     });
+
+    // Check if there is an existing button container in the parent and remove it
+    const existingBtn = els.preferenceList.parentElement.querySelector('.pref-expand-container');
+    if (existingBtn) existingBtn.remove();
+
+    if (needsTruncation) {
+        const iconName = uiState.showAllPreferences ? 'chevron-up' : 'chevron-down';
+        const labelText = uiState.showAllPreferences ? 'Show Less ▴' : `Show All (${totalPrefs} Rules) ▾`;
+        
+        const btnContainer = document.createElement('div');
+        btnContainer.className = 'pref-expand-container';
+        btnContainer.style.cssText = "display: flex; justify-content: flex-end; margin-top: 1rem; padding-right: 0.5rem; width: 100%;";
+        btnContainer.innerHTML = `
+            <button type="button" onclick="toggleShowAllPreferences()" class="btn-pro-expand">
+                <span>${labelText}</span>
+                <i data-lucide="${iconName}"></i>
+            </button>
+        `;
+        els.preferenceList.parentElement.appendChild(btnContainer);
+    }
 }
+
+function toggleShowAllPreferences() {
+    uiState.showAllPreferences = !uiState.showAllPreferences;
+    renderPreferences();
+    if(window.lucide) lucide.createIcons();
+}
+window.toggleShowAllPreferences = toggleShowAllPreferences;
+
 
 
 function getTeacherWorkload(teacherName) {
@@ -1548,7 +1880,7 @@ function renderSummaryTable() {
     const periodsPerDay = state.settings.periods || 8;
     const weeklyPeriods = periodsPerDay * 5;
     const totalPeriods = weeklyPeriods * classCount;
-    const allottedPeriods = state.subjectRules.reduce((sum, r) => sum + r.periods, 0);
+    const allottedPeriods = calculateTotalPeriods(state.subjectRules);
     const periodsLeft = totalPeriods - allottedPeriods;
 
     let calculationHtml = `
@@ -1722,11 +2054,8 @@ function validateDataBeforeGeneration() {
     
     // 2. Check if any class exceeds max weekly periods
     for (const c of classes) {
-        let totalClassPeriods = 0;
         const classSubjects = state.subjectRules.filter(r => r.std === c);
-        classSubjects.forEach(r => {
-            totalClassPeriods += parseInt(r.periods) || 0;
-        });
+        let totalClassPeriods = calculateTotalPeriods(classSubjects);
         
         if (totalClassPeriods > maxWeeklyPeriods) {
             showToast(`ERROR: Class '${c}' has a total of ${totalClassPeriods} allotted subject periods, which exceeds the maximum limit of ${maxWeeklyPeriods} periods per week (5 days x ${state.settings.periods} periods/day). Please reduce the allotted periods!`, 'error');
@@ -1791,7 +2120,7 @@ function generateTimetable() {
     }
 
     // Build requirements list and apply Class Teacher Rule
-    let classTeachers = {}; // { className: [ { name: teacherName, subj: subjectName, pCount: pCount } ] }
+    let classTeachers = {}; // { className: [ duties ] }
     state.teacherRules.forEach(t => {
         if (t.charge && masterGrid[t.charge]) {
             if (!classTeachers[t.charge]) classTeachers[t.charge] = [];
@@ -1801,7 +2130,24 @@ function generateTimetable() {
             if (pref) {
                 let rule = state.subjectRules.find(r => r.std === t.charge && r.name === pref.subj);
                 let pCount = rule ? parseInt(rule.periods) : 5;
-                classTeachers[t.charge].push({ name: t.name, subj: pref.subj, pCount: pCount });
+                if (rule && rule.clubbed) {
+                    const otherTeacherObj = state.teacherRules.find(tr => tr.classes.some(tc => tc.std === t.charge && tc.subj === rule.clubbed));
+                    classTeachers[t.charge].push({
+                        type: 'clubbed',
+                        name1: t.name,
+                        subj1: pref.subj,
+                        name2: otherTeacherObj ? otherTeacherObj.name : null,
+                        subj2: rule.clubbed,
+                        pCount: pCount
+                    });
+                } else {
+                    classTeachers[t.charge].push({
+                        type: 'single',
+                        name: t.name,
+                        subj: pref.subj,
+                        pCount: pCount
+                    });
+                }
             } else {
                 // Find all subjects this teacher takes in this class
                 let subjectsTaken = t.classes.filter(c => c.std === t.charge);
@@ -1809,10 +2155,26 @@ function generateTimetable() {
                     subjectsTaken.forEach(st => {
                         let rule = state.subjectRules.find(r => r.std === t.charge && r.name === st.subj);
                         let pCount = rule ? parseInt(rule.periods) : 5;
-                        classTeachers[t.charge].push({ name: t.name, subj: st.subj, pCount: pCount });
+                        if (rule && rule.clubbed) {
+                            const otherTeacherObj = state.teacherRules.find(tr => tr.classes.some(tc => tc.std === t.charge && tc.subj === rule.clubbed));
+                            classTeachers[t.charge].push({
+                                type: 'clubbed',
+                                name1: t.name,
+                                subj1: st.subj,
+                                name2: otherTeacherObj ? otherTeacherObj.name : null,
+                                subj2: rule.clubbed,
+                                pCount: pCount
+                            });
+                        } else {
+                            classTeachers[t.charge].push({
+                                type: 'single',
+                                name: t.name,
+                                subj: st.subj,
+                                pCount: pCount
+                            });
+                        }
                     });
                 }
-                // If they take NO subjects and NO preference is set, they get NO 1st periods (as per user request "if that teacher teaches subject... thats all")
             }
         }
     });
@@ -1838,7 +2200,7 @@ function generateTimetable() {
     });
     
     // 3. First pass: Assign Class Teachers to their first period days (strictly up to their workload, max 5 per class)
-    let firstPeriodAssignments = {}; // { className: { dayName: { teacher, subj } } }
+    let firstPeriodAssignments = {}; // { className: { dayName: assignment } }
     classes.forEach(c => {
         firstPeriodAssignments[c] = {};
     });
@@ -1849,25 +2211,71 @@ function generateTimetable() {
         
         duties.forEach(duty => {
             let pToAssign = duty.pCount;
+            // For clubbed duties: reserve slots for clubbed_subjects preferences (Pass 0.2 places them).
+            // Reducing pToAssign here prevents the first-period row from over-filling and causing doubled periods.
+            if (duty.type === 'clubbed') {
+                const prefCount = state.preferences.filter(p =>
+                    p.type === 'clubbed_subjects' &&
+                    p.clubbedClasses.includes(c) &&
+                    ((p.subj === duty.subj1 && p.subj2 === duty.subj2) ||
+                     (p.subj === duty.subj2 && p.subj2 === duty.subj1))
+                ).length;
+                pToAssign = Math.max(0, pToAssign - prefCount);
+            }
             for (let i = 0; i < days.length && pToAssign > 0 && classAssignedSlots < days.length; i++) {
                 let day = days[i];
                 if (!firstPeriodAssignments[c][day]) {
-                    // Check if teacher is free (not already assigned 1st period in another class)
-                    let isBusy = false;
-                    Object.values(firstPeriodAssignments).forEach(otherClassAssignments => {
-                        if (otherClassAssignments[day] && otherClassAssignments[day].teacher === duty.name) {
-                            isBusy = true;
+                    if (duty.type === 'clubbed') {
+                        let t1Busy = false;
+                        let t2Busy = false;
+                        Object.values(firstPeriodAssignments).forEach(otherClassAssignments => {
+                            if (otherClassAssignments[day]) {
+                                const o = otherClassAssignments[day];
+                                if (o.teacher === duty.name1 || o.teacher2 === duty.name1 || o.teacher === duty.name2 || o.teacher2 === duty.name2) {
+                                    if (o.teacher === duty.name1 || o.teacher2 === duty.name1) t1Busy = true;
+                                    if (o.teacher === duty.name2 || o.teacher2 === duty.name2) t2Busy = true;
+                                }
+                            }
+                        });
+                        
+                        if (!t1Busy && (!duty.name2 || !t2Busy)) {
+                            firstPeriodAssignments[c][day] = {
+                                type: 'clubbed',
+                                teacher: duty.name1,
+                                subj: duty.subj1,
+                                teacher2: duty.name2,
+                                subj2: duty.subj2
+                            };
+                            pToAssign--;
+                            classAssignedSlots++;
+                            let wl1 = classWorkloads[c].find(w => w.teacher === duty.name1 && w.subj === duty.subj1);
+                            if (wl1) wl1.remaining--;
+                            if (duty.name2) {
+                                let wl2 = classWorkloads[c].find(w => w.teacher === duty.name2 && w.subj === duty.subj2);
+                                if (wl2) wl2.remaining--;
+                            }
                         }
-                    });
+                    } else {
+                        let isBusy = false;
+                        Object.values(firstPeriodAssignments).forEach(otherClassAssignments => {
+                            if (otherClassAssignments[day]) {
+                                const o = otherClassAssignments[day];
+                                if (o.teacher === duty.name || o.teacher2 === duty.name) {
+                                    isBusy = true;
+                                }
+                            }
+                        });
 
-                    if (!isBusy) {
-                        firstPeriodAssignments[c][day] = { teacher: duty.name, subj: duty.subj };
-                        pToAssign--;
-                        classAssignedSlots++;
-                        // Decrement remaining periods in workload
-                        let wl = classWorkloads[c].find(w => w.teacher === duty.name && w.subj === duty.subj);
-                        if (wl) {
-                            wl.remaining--;
+                        if (!isBusy) {
+                            firstPeriodAssignments[c][day] = {
+                                type: 'single',
+                                teacher: duty.name,
+                                subj: duty.subj
+                            };
+                            pToAssign--;
+                            classAssignedSlots++;
+                            let wl = classWorkloads[c].find(w => w.teacher === duty.name && w.subj === duty.subj);
+                            if (wl) wl.remaining--;
                         }
                     }
                 }
@@ -1879,59 +2287,68 @@ function generateTimetable() {
     days.forEach(day => {
         classes.forEach(c => {
             if (!firstPeriodAssignments[c][day]) {
-                // Find candidates in classWorkloads[c] who have remaining > 0 and are NOT assigned on this day in any other class
                 let candidates = classWorkloads[c].filter(w => w.remaining > 0);
                 candidates = candidates.filter(cand => {
                     let isAssigned = false;
                     Object.keys(firstPeriodAssignments).forEach(otherC => {
-                        if (firstPeriodAssignments[otherC][day] && firstPeriodAssignments[otherC][day].teacher === cand.teacher) {
+                        const o = firstPeriodAssignments[otherC][day];
+                        if (o && (o.teacher === cand.teacher || o.teacher2 === cand.teacher)) {
                             isAssigned = true;
                         }
                     });
                     return !isAssigned;
                 });
+                // For clubbed subjects with preferred period rules: don't consume slots reserved for Pass 0.2
+                candidates = candidates.filter(cand => {
+                    const subRule = state.subjectRules.find(r => r.std === c && r.name === cand.subj);
+                    if (subRule && subRule.clubbed) {
+                        const prefCount = state.preferences.filter(p =>
+                            p.type === 'clubbed_subjects' &&
+                            p.clubbedClasses.includes(c) &&
+                            ((p.subj === cand.subj && p.subj2 === subRule.clubbed) ||
+                             (p.subj === subRule.clubbed && p.subj2 === cand.subj))
+                        ).length;
+                        // remaining was already reduced in step 3; if it's at or below prefCount, all remaining slots are reserved
+                        if (cand.remaining <= prefCount) return false;
+                    }
+                    return true;
+                });
                 
                 if (candidates.length > 0) {
-                    // Pick the candidate with the highest remaining periods to distribute workload evenly
                     candidates.sort((a, b) => b.remaining - a.remaining);
                     let chosen = candidates[0];
-                    firstPeriodAssignments[c][day] = { teacher: chosen.teacher, subj: chosen.subj };
-                    chosen.remaining--;
-                } else {
-                    // Fallback 1: Find any teacher of this class (even if remaining <= 0) who is NOT busy on this day
-                    let fallbackCandidates = classWorkloads[c].filter(cand => {
-                        let isAssigned = false;
-                        Object.keys(firstPeriodAssignments).forEach(otherC => {
-                            if (firstPeriodAssignments[otherC][day] && firstPeriodAssignments[otherC][day].teacher === cand.teacher) {
-                                isAssigned = true;
-                            }
-                        });
-                        return !isAssigned;
-                    });
-                    
-                    if (fallbackCandidates.length > 0) {
-                        fallbackCandidates.sort((a, b) => b.remaining - a.remaining);
-                        let chosen = fallbackCandidates[0];
-                        let useSubj = chosen.remaining > 0 ? chosen.subj : 'Class Teacher';
-                        firstPeriodAssignments[c][day] = { teacher: chosen.teacher, subj: useSubj };
-                        if (useSubj === chosen.subj) {
+                    // Check if this chosen candidate's subject is clubbed
+                    const subRule = state.subjectRules.find(r => r.std === c && r.name === chosen.subj);
+                    if (subRule && subRule.clubbed) {
+                        // Find the other teacher
+                        const otherTeacherObj = state.teacherRules.find(tr => tr.classes.some(tc => tc.std === c && tc.subj === subRule.clubbed));
+                        // Make sure the other teacher is also free!
+                        let otherTBusy = false;
+                        if (otherTeacherObj) {
+                            Object.keys(firstPeriodAssignments).forEach(otherC => {
+                                const o = firstPeriodAssignments[otherC][day];
+                                if (o && (o.teacher === otherTeacherObj.name || o.teacher2 === otherTeacherObj.name)) {
+                                    otherTBusy = true;
+                                }
+                            });
+                        }
+                        if (!otherTBusy) {
+                            firstPeriodAssignments[c][day] = {
+                                type: 'clubbed',
+                                teacher: chosen.teacher,
+                                subj: chosen.subj,
+                                teacher2: otherTeacherObj ? otherTeacherObj.name : null,
+                                subj2: subRule.clubbed
+                            };
                             chosen.remaining--;
+                            if (otherTeacherObj) {
+                                let wl2 = classWorkloads[c].find(w => w.teacher === otherTeacherObj.name && w.subj === subRule.clubbed);
+                                if (wl2) wl2.remaining--;
+                            }
                         }
                     } else {
-                        // Fallback 2: Absolutely no teacher is free. Fall back to Class Teacher themselves since they are free
-                        let ct = classTeachers[c];
-                        if (ct && ct.length > 0) {
-                            let firstCt = ct[0];
-                            let wl = classWorkloads[c] ? classWorkloads[c].find(w => w.teacher === firstCt.name && w.subj === firstCt.subj) : null;
-                            let useSubj = (wl && wl.remaining > 0) ? firstCt.subj : 'Class Teacher';
-                            firstPeriodAssignments[c][day] = { teacher: firstCt.name, subj: useSubj };
-                            if (wl && useSubj === firstCt.subj) {
-                                wl.remaining--;
-                            }
-                        } else {
-                            // Fallback 3: Generic Class Teacher
-                            firstPeriodAssignments[c][day] = { teacher: 'Class Teacher', subj: 'Class Teacher' };
-                        }
+                        firstPeriodAssignments[c][day] = { type: 'single', teacher: chosen.teacher, subj: chosen.subj };
+                        chosen.remaining--;
                     }
                 }
             }
@@ -1943,77 +2360,278 @@ function generateTimetable() {
         days.forEach(day => {
             let assignment = firstPeriodAssignments[c][day];
             if (assignment) {
-                let { teacher, subj } = assignment;
-                
-                masterGrid[c][day][1] = `${subj} (${teacher})`;
-                if (teacherGrid[teacher]) {
-                    teacherGrid[teacher][day][1] = `${c} (${subj})`;
+                if (assignment.type === 'clubbed') {
+                    let { teacher, subj, teacher2, subj2 } = assignment;
+                    masterGrid[c][day][1] = `${subj} / ${subj2}`;
+                    if (teacherGrid[teacher]) {
+                        teacherGrid[teacher][day][1] = `${c} (${subj})`;
+                    }
+                    if (teacher2 && teacherGrid[teacher2]) {
+                        teacherGrid[teacher2][day][1] = `${c} (${subj2})`;
+                    }
+                    prePlacedCounts[`${teacher}_${c}_${subj}`] = (prePlacedCounts[`${teacher}_${c}_${subj}`] || 0) + 1;
+                    if (teacher2) {
+                        prePlacedCounts[`${teacher2}_${c}_${subj2}`] = (prePlacedCounts[`${teacher2}_${c}_${subj2}`] || 0) + 1;
+                    }
+                } else {
+                    let { teacher, subj } = assignment;
+                    masterGrid[c][day][1] = `${subj} (${teacher})`;
+                    if (teacherGrid[teacher]) {
+                        teacherGrid[teacher][day][1] = `${c} (${subj})`;
+                    }
+                    prePlacedCounts[`${teacher}_${c}_${subj}`] = (prePlacedCounts[`${teacher}_${c}_${subj}`] || 0) + 1;
                 }
-                
-                // Track in prePlacedCounts so it reduces their remaining requirements correctly
-                let key = `${teacher}_${c}_${subj}`;
-                prePlacedCounts[key] = (prePlacedCounts[key] || 0) + 1;
             }
         });
+    });
+
+    // Pass 0.2: Clubbed Subjects Preferences Placement (manual) - Runs before requirements generation so prePlacedCounts are correctly adjusted!
+    let clubbedSubjRules = state.preferences.filter(p => p.type === 'clubbed_subjects');
+    clubbedSubjRules.forEach(rule => {
+        const { subj, teacher, subj2, teacher2, clubbedClasses, day, period } = rule;
+        
+        const allClassesExist = clubbedClasses.every(c => masterGrid[c]);
+        if (!allClassesExist || !teacherGrid[teacher] || !teacherGrid[teacher2]) return;
+
+        // Safety guard: never exceed the allotted period count for any class
+        const capacityOK = clubbedClasses.every(c => {
+            const subRule = state.subjectRules.find(r => r.std === c && r.name === subj);
+            const pCount = subRule ? (subRule.periods || 0) : 0;
+            const key1 = `${teacher}_${c}_${subj}`;
+            return (prePlacedCounts[key1] || 0) < pCount;
+        });
+
+        let allFree = capacityOK &&
+                      clubbedClasses.every(c => !masterGrid[c][day][period]) &&
+                      !teacherGrid[teacher][day][period] &&
+                      !teacherGrid[teacher2][day][period];
+
+        if (allFree) {
+            clubbedClasses.forEach(c => {
+                masterGrid[c][day][period] = `${subj} / ${subj2}`;
+            });
+            teacherGrid[teacher][day][period] = `${clubbedClasses.join(', ')} (${subj})`;
+            teacherGrid[teacher2][day][period] = `${clubbedClasses.join(', ')} (${subj2})`;
+            
+            clubbedClasses.forEach(c => {
+                prePlacedCounts[`${teacher}_${c}_${subj}`] = (prePlacedCounts[`${teacher}_${c}_${subj}`] || 0) + 1;
+                prePlacedCounts[`${teacher2}_${c}_${subj2}`] = (prePlacedCounts[`${teacher2}_${c}_${subj2}`] || 0) + 1;
+            });
+        }
     });
 
     // Separate requirements into passes
     let specificReqs = [];
     let otherReqs = [];
 
+    const processedClubbed = {};
+    classes.forEach(c => processedClubbed[c] = new Set());
+
+    // 1. Process Clubbed Subjects first
+    classes.forEach(c => {
+        const classRules = state.subjectRules.filter(r => r.std === c);
+        classRules.forEach(r => {
+            if (r.clubbed && !processedClubbed[c].has(r.name)) {
+                const subj1 = r.name;
+                const subj2 = r.clubbed;
+                processedClubbed[c].add(subj1);
+                processedClubbed[c].add(subj2);
+
+                const t1Obj = state.teacherRules.find(t => t.classes.some(tc => tc.std === c && tc.subj === subj1));
+                const t2Obj = state.teacherRules.find(t => t.classes.some(tc => tc.std === c && tc.subj === subj2));
+                const teacher1 = t1Obj ? t1Obj.name : null;
+                const teacher2 = t2Obj ? t2Obj.name : null;
+
+                const pCount = r.periods || 5;
+                const key1 = `${teacher1}_${c}_${subj1}`;
+                const alreadyPlaced = prePlacedCounts[key1] || 0;
+                const remaining = pCount - alreadyPlaced;
+
+                // Check if there is a specific preference for either subject
+                const specificPref1 = state.preferences.find(p => p.subj === subj1 && p.type === 'specific' && (!p.teacher || p.teacher === teacher1));
+                const specificPref2 = state.preferences.find(p => p.subj === subj2 && p.type === 'specific' && (!p.teacher || p.teacher === teacher2));
+                const specificPref = specificPref1 || specificPref2;
+
+                let specificPlacedCount = 0;
+                if (specificPref) {
+                    if (specificPref.day === 'any') {
+                        days.forEach(d => {
+                            if (specificPlacedCount < remaining) {
+                                specificReqs.push({
+                                    isClubbedSubjects: true,
+                                    std: c,
+                                    subj1,
+                                    teacher1,
+                                    subj2,
+                                    teacher2,
+                                    specific: { day: d, periods: specificPref.periods }
+                                });
+                                specificPlacedCount++;
+                            }
+                        });
+                    } else {
+                        specificReqs.push({
+                            isClubbedSubjects: true,
+                            std: c,
+                            subj1,
+                            teacher1,
+                            subj2,
+                            teacher2,
+                            specific: specificPref
+                        });
+                        specificPlacedCount = 1;
+                    }
+                }
+
+                const regularRemaining = remaining - specificPlacedCount;
+                for (let i = 0; i < regularRemaining; i++) {
+                    otherReqs.push({
+                        isClubbedSubjects: true,
+                        std: c,
+                        subj1,
+                        teacher1,
+                        subj2,
+                        teacher2
+                    });
+                }
+            }
+        });
+    });
+
+    // 2. Process non-clubbed subjects
     state.teacherRules.forEach(t => {
         t.classes.forEach(c => {
+            if (processedClubbed[c.std] && processedClubbed[c.std].has(c.subj)) {
+                return; // already handled
+            }
+
             let rule = state.subjectRules.find(r => r.std === c.std && r.name === c.subj);
             let pCount = rule ? parseInt(rule.periods) : 5;
             let key = `${t.name}_${c.std}_${c.subj}`;
             let alreadyPlaced = prePlacedCounts[key] || 0;
             let remaining = pCount - alreadyPlaced;
-            
-            // Find specific preference for this subject AND this teacher (if specified)
+
             const specificPref = state.preferences.find(p => 
                 p.subj === c.subj && 
                 p.type === 'specific' && 
                 (!p.teacher || p.teacher === t.name)
             );
 
-            for(let i=0; i<remaining; i++) {
-                const req = { teacher: t.name, std: c.std, subj: c.subj };
-                // ONLY apply specific preference to the FIRST instance of the subject
-                if (specificPref && i === 0) {
-                    specificReqs.push({ ...req, specific: specificPref });
+            let specificPlacedCount = 0;
+            if (specificPref) {
+                if (specificPref.day === 'any') {
+                    days.forEach(d => {
+                        if (specificPlacedCount < remaining) {
+                            specificReqs.push({
+                                teacher: t.name,
+                                std: c.std,
+                                subj: c.subj,
+                                specific: { day: d, periods: specificPref.periods }
+                            });
+                            specificPlacedCount++;
+                        }
+                    });
                 } else {
-                    otherReqs.push(req);
+                    specificReqs.push({
+                        teacher: t.name,
+                        std: c.std,
+                        subj: c.subj,
+                        specific: specificPref
+                    });
+                    specificPlacedCount = 1;
                 }
+            }
+
+            const regularRemaining = remaining - specificPlacedCount;
+            for (let i = 0; i < regularRemaining; i++) {
+                otherReqs.push({ teacher: t.name, std: c.std, subj: c.subj });
             }
         });
     });
 
+    // Group isClubbedSubjects reqs by teacher-pair+subject-pair so multi-class slots are placed together
+    {
+        // --- Group otherReqs ---
+        const clubbedSubjMap = {};
+        const regularOther = [];
+        otherReqs.forEach(req => {
+            if (req.isClubbedSubjects) {
+                const key = `${req.teacher1}||${req.subj1}||${req.teacher2}||${req.subj2}`;
+                if (!clubbedSubjMap[key]) clubbedSubjMap[key] = { baseReq: req, stdsList: [] };
+                clubbedSubjMap[key].stdsList.push(req.std);
+            } else {
+                regularOther.push(req);
+            }
+        });
+        Object.values(clubbedSubjMap).forEach(({ baseReq, stdsList }) => {
+            const stdCounts = {};
+            stdsList.forEach(std => { stdCounts[std] = (stdCounts[std] || 0) + 1; });
+            const maxCount = Math.max(...Object.values(stdCounts));
+            const allStds = Object.keys(stdCounts);
+            for (let i = 0; i < maxCount; i++) {
+                regularOther.push({ ...baseReq, stds: allStds });
+            }
+        });
+        otherReqs = regularOther;
+
+        // --- Group specificReqs ---
+        const clubbedSpecMap = {};
+        const regularSpecific = [];
+        specificReqs.forEach(req => {
+            if (req.isClubbedSubjects) {
+                const key = `${req.teacher1}||${req.subj1}||${req.teacher2}||${req.subj2}||${req.specific.day}||${(req.specific.periods || []).join(',')}`;
+                if (!clubbedSpecMap[key]) clubbedSpecMap[key] = { baseReq: req, stds: [] };
+                if (!clubbedSpecMap[key].stds.includes(req.std)) clubbedSpecMap[key].stds.push(req.std);
+            } else {
+                regularSpecific.push(req);
+            }
+        });
+        Object.values(clubbedSpecMap).forEach(({ baseReq, stds }) => {
+            regularSpecific.push({ ...baseReq, stds });
+        });
+        specificReqs = regularSpecific;
+    }
+
     // Helper to place a requirement
     const tryPlace = (req, useSpread) => {
-        const rules = state.preferences.filter(p => 
-            p.subj === req.subj && 
-            p.type !== 'specific' && 
-            p.type !== 'clubbed' &&
-            (!p.teacher || p.teacher === req.teacher)
-        );
+        let rules = [];
+        if (req.isClubbedSubjects) {
+            const rules1 = state.preferences.filter(p => 
+                p.subj === req.subj1 && p.type !== 'specific' && p.type !== 'clubbed' && (!p.teacher || p.teacher === req.teacher1)
+            );
+            const rules2 = state.preferences.filter(p => 
+                p.subj === req.subj2 && p.type !== 'specific' && p.type !== 'clubbed' && (!p.teacher || p.teacher === req.teacher2)
+            );
+            rules = [...rules1, ...rules2];
+        } else {
+            rules = state.preferences.filter(p => 
+                p.subj === req.subj && p.type !== 'specific' && p.type !== 'clubbed' && (!p.teacher || p.teacher === req.teacher)
+            );
+        }
+
         const shuffledDays = shuffleArray([...days]);
+        const stdsToCheck = req.isClubbed ? req.stds : (req.isClubbedSubjects && req.stds ? req.stds : [req.std]);
         
-        const stdsToCheck = req.isClubbed ? req.stds : [req.std];
-        
-        for(let day of shuffledDays) {
+        for (let day of shuffledDays) {
             if (useSpread) {
-                const alreadyHasSubj = stdsToCheck.some(std => 
-                    Object.values(masterGrid[std][day]).some(val => val.startsWith(req.subj))
-                );
-                if (alreadyHasSubj) continue;
+                let alreadyHas = false;
+                if (req.isClubbedSubjects) {
+                    alreadyHas = stdsToCheck.some(std => 
+                        Object.values(masterGrid[std][day]).some(val => val.startsWith(req.subj1) || val.startsWith(req.subj2))
+                    );
+                } else {
+                    alreadyHas = stdsToCheck.some(std => 
+                        Object.values(masterGrid[std][day]).some(val => val.startsWith(req.subj))
+                    );
+                }
+                if (alreadyHas) continue;
             }
 
             const periods = [];
-            for(let i=1; i<=state.settings.periods; i++) periods.push(i);
+            for (let i = 1; i <= state.settings.periods; i++) periods.push(i);
             shuffleArray(periods);
 
-            for(let p of periods) {
-                // Check general rules
+            for (let p of periods) {
                 let isAllowed = true;
                 rules.forEach(rule => {
                     if (rule.day !== 'any' && rule.day !== day) return;
@@ -2022,20 +2640,37 @@ function generateTimetable() {
                 });
                 if (!isAllowed) continue;
 
-                // Check if ALL classes are free and teacher is free
                 const allClassesFree = stdsToCheck.every(std => !masterGrid[std][day][p]);
                 
-                if(allClassesFree && !teacherGrid[req.teacher][day][p]) {
-                    stdsToCheck.forEach(std => {
-                        masterGrid[std][day][p] = `${req.subj} (${req.teacher})`;
-                    });
-                    
-                    if (req.isClubbed) {
-                        teacherGrid[req.teacher][day][p] = `${req.stds.join(', ')} (${req.subj})`;
-                    } else {
-                        teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+                if (req.isClubbedSubjects) {
+                    const t1Free = !req.teacher1 || !teacherGrid[req.teacher1][day][p];
+                    const t2Free = !req.teacher2 || !teacherGrid[req.teacher2][day][p];
+                    if (allClassesFree && t1Free && t2Free) {
+                        const displayStds = stdsToCheck.join(', ');
+                        stdsToCheck.forEach(std => {
+                            masterGrid[std][day][p] = `${req.subj1} / ${req.subj2}`;
+                        });
+                        if (req.teacher1 && teacherGrid[req.teacher1]) {
+                            teacherGrid[req.teacher1][day][p] = `${displayStds} (${req.subj1})`;
+                        }
+                        if (req.teacher2 && teacherGrid[req.teacher2]) {
+                            teacherGrid[req.teacher2][day][p] = `${displayStds} (${req.subj2})`;
+                        }
+                        return true;
                     }
-                    return true;
+                } else {
+                    const tFree = !req.teacher || !teacherGrid[req.teacher][day][p];
+                    if (allClassesFree && tFree) {
+                        stdsToCheck.forEach(std => {
+                            masterGrid[std][day][p] = `${req.subj} (${req.teacher})`;
+                        });
+                        if (req.isClubbed) {
+                            teacherGrid[req.teacher][day][p] = `${req.stds.join(', ')} (${req.subj})`;
+                        } else {
+                            teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+                        }
+                        return true;
+                    }
                 }
             }
         }
@@ -2046,43 +2681,34 @@ function generateTimetable() {
     specificReqs.forEach(req => {
         const day = req.specific.day;
         const p = req.specific.periods[0];
-        if (!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
-            masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
-            teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
-        } else {
-            // If clash, treat as regular req for later passes
-            otherReqs.push(req);
-        }
-    });
-
-    // Pass 0.2: Clubbed Subjects Placement
-    let clubbedSubjRules = state.preferences.filter(p => p.type === 'clubbed_subjects');
-    clubbedSubjRules.forEach(rule => {
-        const { subj, teacher, subj2, teacher2, clubbedClasses, day, period } = rule;
         
-        // Ensure grids exist for all classes
-        const allClassesExist = clubbedClasses.every(c => masterGrid[c]);
-        if (!allClassesExist || !teacherGrid[teacher] || !teacherGrid[teacher2]) return;
-
-        // Place if all are free
-        let allFree = clubbedClasses.every(c => !masterGrid[c][day][period]) && 
-                      !teacherGrid[teacher][day][period] && 
-                      !teacherGrid[teacher2][day][period];
-        
-        if (allFree) {
-            clubbedClasses.forEach(c => {
-                // CLASS timetable: show only subjects, NO teacher names
-                masterGrid[c][day][period] = `${subj} / ${subj2}`;
-            });
-            // TEACHER timetable: each teacher sees only their own subject + which classes
-            teacherGrid[teacher][day][period] = `${clubbedClasses.join(', ')} (${subj})`;
-            teacherGrid[teacher2][day][period] = `${clubbedClasses.join(', ')} (${subj2})`;
+        if (req.isClubbedSubjects) {
+            const reqStds = req.stds || [req.std];
+            const allClassesFreeSpec = reqStds.every(std => masterGrid[std] && !masterGrid[std][day][p]);
+            const t1Free = !req.teacher1 || !teacherGrid[req.teacher1][day][p];
+            const t2Free = !req.teacher2 || !teacherGrid[req.teacher2][day][p];
             
-            // Mark as pre-placed so requirements won't double-place
-            clubbedClasses.forEach(c => {
-                prePlacedCounts[`${teacher}_${c}_${subj}`] = (prePlacedCounts[`${teacher}_${c}_${subj}`] || 0) + 1;
-                prePlacedCounts[`${teacher2}_${c}_${subj2}`] = (prePlacedCounts[`${teacher2}_${c}_${subj2}`] || 0) + 1;
-            });
+            if (allClassesFreeSpec && t1Free && t2Free) {
+                const displayStds = reqStds.join(', ');
+                reqStds.forEach(std => {
+                    masterGrid[std][day][p] = `${req.subj1} / ${req.subj2}`;
+                });
+                if (req.teacher1 && teacherGrid[req.teacher1]) {
+                    teacherGrid[req.teacher1][day][p] = `${displayStds} (${req.subj1})`;
+                }
+                if (req.teacher2 && teacherGrid[req.teacher2]) {
+                    teacherGrid[req.teacher2][day][p] = `${displayStds} (${req.subj2})`;
+                }
+            } else {
+                otherReqs.push(req);
+            }
+        } else {
+            if (!masterGrid[req.std][day][p] && !teacherGrid[req.teacher][day][p]) {
+                masterGrid[req.std][day][p] = `${req.subj} (${req.teacher})`;
+                teacherGrid[req.teacher][day][p] = `${req.std} (${req.subj})`;
+            } else {
+                otherReqs.push(req);
+            }
         }
     });
 
@@ -2094,7 +2720,6 @@ function generateTimetable() {
     clubbedClassRules.forEach(rule => {
         const { teacher, subj: ruleSubj, clubbedClasses, day: ruleDay, period: rulePeriod } = rule;
 
-        // Find and remove matching requirements from the pool (one per clubbed class)
         let subjectFound = null;
         let removedCount = 0;
 
@@ -2113,7 +2738,6 @@ function generateTimetable() {
         const subjToUse = ruleSubj || subjectFound;
         if (!subjToUse || removedCount === 0) return;
 
-        // If a specific day+period is set, place directly
         if (rulePeriod && ruleDay && ruleDay !== 'any') {
             const allFree = clubbedClasses.every(c => masterGrid[c] && !masterGrid[c][ruleDay][rulePeriod]) &&
                             teacherGrid[teacher] && !teacherGrid[teacher][ruleDay][rulePeriod];
@@ -2126,19 +2750,16 @@ function generateTimetable() {
                     teacherGrid[teacher][ruleDay][rulePeriod] = `${clubbedClasses.join(', ')} (${subjToUse})`;
                 }
             } else {
-                // Slot occupied — fall back to tryPlace
                 const req = { isClubbed: true, teacher, subj: subjToUse, stds: clubbedClasses };
                 if (!tryPlace(req, true)) tryPlace(req, false);
             }
         } else {
-            // No specific period — queue for tryPlace
             clubbedReqs.push({ isClubbed: true, teacher, subj: subjToUse, stds: clubbedClasses });
         }
     });
 
     otherReqs = remainingOtherReqs;
 
-    // Place queued clubbed reqs (those without a specific period)
     clubbedReqs.forEach(req => {
         if (!tryPlace(req, true)) tryPlace(req, false);
     });
@@ -2146,26 +2767,31 @@ function generateTimetable() {
     // 2. Split otherReqs into Pass 1 (Spread) and Pass 2 (Overflow)
     let spreadReqs = [];
     let overflowReqs = [];
-    let tripleCounts = {}; // Track how many of this triple we are trying to place
+    let tripleCounts = {}; 
 
-    // SHUFFLE otherReqs first for randomized distribution
     shuffleArray(otherReqs);
 
     otherReqs.forEach(req => {
-        let key = `${req.teacher}_${req.std}_${req.subj}`;
+        const reqStdRef = req.isClubbedSubjects ? (req.std || (req.stds && req.stds[0])) : req.std;
+        let key = req.isClubbedSubjects ? `${req.teacher1}_${req.teacher2}_${reqStdRef}_${req.subj1}_${req.subj2}` : `${req.teacher}_${req.std}_${req.subj}`;
         tripleCounts[key] = (tripleCounts[key] || 0);
         
-        // Count how many are ALREADY placed (including by Class Teacher rule)
         let placedAlready = 0;
         days.forEach(d => {
             for(let p=1; p<=state.settings.periods; p++) {
-                if (masterGrid[req.std][d][p] && masterGrid[req.std][d][p].startsWith(req.subj)) {
-                    placedAlready++;
+                if (req.isClubbedSubjects) {
+                    const checkStd = reqStdRef;
+                    if (checkStd && masterGrid[checkStd] && masterGrid[checkStd][d][p] && (masterGrid[checkStd][d][p].startsWith(req.subj1) || masterGrid[checkStd][d][p].startsWith(req.subj2))) {
+                        placedAlready++;
+                    }
+                } else {
+                    if (masterGrid[req.std][d][p] && masterGrid[req.std][d][p].startsWith(req.subj)) {
+                        placedAlready++;
+                    }
                 }
             }
         });
 
-        // If we haven't hit 1 per day (5 total) for this class-subj, put in spread
         if (placedAlready + tripleCounts[key] < 5) {
             spreadReqs.push(req);
         } else {
@@ -2187,10 +2813,24 @@ function generateTimetable() {
         tryPlace(req, false);
     });
 
-    
     return { masterGrid, teacherGrid, days, classes: Array.from(classes) };
 }
 
+
+// --- Timetable Cache ---
+// Returns the cached timetable, or generates a new one and caches it.
+// This guarantees Class, Teacher, and School views all read from the EXACT
+// same grid so there is zero mismatch between any of the three views.
+function getOrGenerateTimetable() {
+    if (!cachedTimetable) {
+        cachedTimetable = generateTimetable();
+    }
+    return cachedTimetable;
+}
+
+function invalidateTimetableCache() {
+    cachedTimetable = null;
+}
 
 // --- PDF Exporting ---
 function exportPDF(type) {
@@ -2201,7 +2841,7 @@ function exportPDF(type) {
         return;
     }
 
-    const { masterGrid, teacherGrid, days, classes } = generateTimetable();
+    const { masterGrid, teacherGrid, days, classes } = getOrGenerateTimetable();
 
     // Auto-populate the output dropdowns from fresh data so the user
     // doesn't have to click Generate first before using Show/PDF.
@@ -2381,7 +3021,7 @@ function createPDFDoc(title, typeName, dataGrid, days, JsPDF) {
 // --- Timetable Preview ---
 
 function showPreview(type) {
-    const { masterGrid, teacherGrid, days, classes } = generateTimetable();
+    const { masterGrid, teacherGrid, days, classes } = getOrGenerateTimetable();
     const periods = state.settings.periods || 8;
 
     // Auto-populate the output dropdowns from freshly-generated data

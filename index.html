@@ -129,9 +129,15 @@
                     <datalist id="dl-periods"></datalist>
                     <datalist id="dl-stds"></datalist>
                     
-                    <div class="input-group flex-2">
-                        <label>ENTER SUBJECTS <span style="font-size:0.7rem;opacity:0.6;">(comma separated)</span></label>
-                        <input type="text" id="subject-name" placeholder="e.g. MAL I, ENG, SS, BS" list="dl-subjects">
+                    <div class="input-group flex-2" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                        <div class="input-group" style="width: 100%; padding: 0; min-width: unset;">
+                            <label>ENTER SUBJECTS <span style="font-size:0.7rem;opacity:0.6;">(comma separated)</span></label>
+                            <input type="text" id="subject-name" placeholder="e.g. MAL I, ENG, SS, BS" list="dl-subjects">
+                        </div>
+                        <div class="input-group" style="width: 100%; padding: 0; min-width: unset;">
+                            <label>CLUBBED SUBJECTS <span style="font-size:0.7rem;opacity:0.6;">(optional, e.g. ARABIC)</span></label>
+                            <input type="text" id="subject-clubbed" placeholder="e.g. ARABIC" list="dl-subjects">
+                        </div>
                     </div>
                     <div class="input-group">
                         <label>ALLOTTED PERIODS</label>

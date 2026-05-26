@@ -32,6 +32,11 @@ const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/mastergri
 console.log(`Connecting to MongoDB...`);
 mongoose.set('bufferCommands', false);
 
+// Run SQLite automatic data migration only when Mongoose connection is fully open and ready!
+mongoose.connection.once('open', () => {
+    runSQLiteMigration();
+});
+
 function connectMongoDB() {
     mongoose.connect(mongoURI, {
         serverSelectionTimeoutMS: 10000,
@@ -40,7 +45,6 @@ function connectMongoDB() {
     })
     .then(() => {
         console.log('MongoDB Connected Successfully!');
-        runSQLiteMigration(); // Automatic SQLite data migration
     })
     .catch(err => {
         console.error('MongoDB Connection Error:', err.message);
