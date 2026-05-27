@@ -14,6 +14,37 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '.')));
 
+// --- Local File Storage for User Logs ---
+const STORAGE_DIR = path.join(__dirname, 'storage');
+const LOGS_FILE = path.join(STORAGE_DIR, 'user_logs.json');
+
+// Ensure storage directory exists
+if (!fs.existsSync(STORAGE_DIR)) {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+}
+
+// Helper to load logs from local file
+function getLocalLogs() {
+    try {
+        if (fs.existsSync(LOGS_FILE)) {
+            const data = fs.readFileSync(LOGS_FILE, 'utf8');
+            return JSON.parse(data || '[]');
+        }
+    } catch (err) {
+        console.error("Error reading local logs:", err);
+    }
+    return [];
+}
+
+// Helper to save logs to local file
+function saveLocalLogs(logs) {
+    try {
+        fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), 'utf8');
+    } catch (err) {
+        console.error("Error writing local logs:", err);
+    }
+}
+
 // Helper to get local IPv4 network address
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -209,6 +240,23 @@ app.get('/api/state', async (req, res) => {
     if (mongoose.connection.readyState !== 1) {
         state.dbConnected = false;
         state.dbError = "MongoDB connection not established / offline";
+        try {
+            const localLogs = getLocalLogs();
+            localLogs.sort((a, b) => b.timestamp - a.timestamp);
+            state.usageLogs = localLogs.slice(0, 500).map(l => ({
+                id: l._id || l.timestamp,
+                timestamp: l.timestamp,
+                school: l.schoolName,
+                ip: l.ip,
+                type: `previews: ${l.previews}, pdfs: ${l.pdfs}`,
+                year: l.year,
+                previews: l.previews,
+                pdfs: l.pdfs,
+                date: l.date
+            }));
+        } catch (localErr) {
+            console.error("Local storage log load failed:", localErr.message);
+        }
         return res.json(state);
     }
 
@@ -231,8 +279,17 @@ app.get('/api/state', async (req, res) => {
         state.adminIps = trustedIps.map(t => t.ip);
 
         // Load new UserLogs sorted by date/timestamp desc
-        const logs = await UserLog.find({}).sort({ timestamp: -1 }).limit(500);
+        let logs = [];
+        try {
+            logs = await UserLog.find({}).sort({ timestamp: -1 }).limit(500);
+            saveLocalLogs(logs);
+        } catch (dbErr) {
+            console.error("MongoDB fetch logs error, falling back to local storage:", dbErr.message);
+            logs = getLocalLogs();
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+        }
         state.usageLogs = logs.map(l => ({
+            id: l._id || l.timestamp,
             timestamp: l.timestamp,
             school: l.schoolName,
             ip: l.ip,
@@ -247,6 +304,23 @@ app.get('/api/state', async (req, res) => {
     } catch (err) {
         state.dbConnected = false;
         state.dbError = err.message;
+        try {
+            const logs = getLocalLogs();
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+            state.usageLogs = logs.slice(0, 500).map(l => ({
+                id: l._id || l.timestamp,
+                timestamp: l.timestamp,
+                school: l.schoolName,
+                ip: l.ip,
+                type: `previews: ${l.previews}, pdfs: ${l.pdfs}`,
+                year: l.year,
+                previews: l.previews,
+                pdfs: l.pdfs,
+                date: l.date
+            }));
+        } catch (localErr) {
+            console.error("Error reading local logs in catch fallback:", localErr.message);
+        }
         res.json(state); // Return fallback state so dashboard works even if DB is offline!
     }
 });
@@ -427,11 +501,35 @@ app.post('/api/userlog/trigger', async (req, res) => {
             pdfs: 0,
             timestamp: Date.now()
         });
-        await log.save();
-        console.log(`Live UserLog created: ${schoolName.trim()} (${yearStr})`);
-
         
-        res.json({ status: 'triggered', log });
+        let savedLog = null;
+        try {
+            savedLog = await log.save();
+            console.log(`Live UserLog created: ${schoolName.trim()} (${yearStr})`);
+        } catch (dbErr) {
+            console.warn("DB offline, creating temporary local log model");
+            savedLog = log;
+        }
+
+        // Save to local storage file
+        try {
+            const localLogs = getLocalLogs();
+            localLogs.push({
+                _id: savedLog._id || savedLog.timestamp,
+                date: savedLog.date,
+                schoolName: savedLog.schoolName,
+                year: savedLog.year,
+                ip: savedLog.ip,
+                previews: savedLog.previews,
+                pdfs: savedLog.pdfs,
+                timestamp: savedLog.timestamp
+            });
+            saveLocalLogs(localLogs);
+        } catch (localErr) {
+            console.error("Failed to write to local storage logs:", localErr.message);
+        }
+        
+        res.json({ status: 'triggered', log: savedLog });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -446,29 +544,65 @@ app.post('/api/userlog/increment', async (req, res) => {
         }
         
         const ip = getIp(req);
-        const d = new Date();
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const yearStr = d.getFullYear();
-        const formattedDate = `${day}.${month}.${yearStr}`;
         
         const incrementField = type === 'preview' ? 'previews' : (type === 'pdf' ? 'pdfs' : null);
         if (!incrementField) {
             return res.status(400).json({ error: "Invalid type. Must be 'preview' or 'pdf'" });
         }
         
-        const updatedLog = await UserLog.findOneAndUpdate(
-            {
-                schoolName: schoolName.trim(),
-                year: year.trim(),
-                ip: ip
-            },
-            { 
-                $inc: { [incrementField]: 1 }
-            },
-            { sort: { timestamp: -1 }, new: true }
-        );
+        let updatedLog = null;
+        try {
+            updatedLog = await UserLog.findOneAndUpdate(
+                {
+                    schoolName: schoolName.trim(),
+                    year: year.trim(),
+                    ip: ip
+                },
+                { 
+                    $inc: { [incrementField]: 1 }
+                },
+                { sort: { timestamp: -1 }, new: true }
+            );
+        } catch (dbErr) {
+            console.warn("DB offline during increment");
+        }
 
+        // Sync to local storage
+        try {
+            const localLogs = getLocalLogs();
+            // Find the last log with same schoolName, year, ip
+            const index = localLogs.map(l => l.schoolName === schoolName.trim() && l.year === year.trim() && l.ip === ip).lastIndexOf(true);
+            if (index !== -1) {
+                localLogs[index][incrementField] = (localLogs[index][incrementField] || 0) + 1;
+                saveLocalLogs(localLogs);
+                if (!updatedLog) {
+                    updatedLog = localLogs[index];
+                }
+            } else {
+                // If not found, create fallback
+                const d = new Date();
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const formattedDate = `${day}.${month}.${d.getFullYear()}`;
+                const fallbackLog = {
+                    _id: Date.now(),
+                    date: formattedDate,
+                    schoolName: schoolName.trim(),
+                    year: year.trim(),
+                    ip: ip,
+                    previews: type === 'preview' ? 1 : 0,
+                    pdfs: type === 'pdf' ? 1 : 0,
+                    timestamp: Date.now()
+                };
+                localLogs.push(fallbackLog);
+                saveLocalLogs(localLogs);
+                if (!updatedLog) {
+                    updatedLog = fallbackLog;
+                }
+            }
+        } catch (localErr) {
+            console.error("Failed to increment in local storage:", localErr.message);
+        }
         
         res.json({ status: 'incremented', log: updatedLog });
     } catch (err) {
@@ -479,8 +613,75 @@ app.post('/api/userlog/increment', async (req, res) => {
 // NEW API: Get All UserLogs
 app.get('/api/userlogs', async (req, res) => {
     try {
-        const logs = await UserLog.find({}).sort({ timestamp: -1 });
+        let logs = [];
+        if (mongoose.connection.readyState === 1) {
+            logs = await UserLog.find({}).sort({ timestamp: -1 });
+            saveLocalLogs(logs);
+        } else {
+            logs = getLocalLogs();
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+        }
         res.json({ logs });
+    } catch (err) {
+        try {
+            const logs = getLocalLogs();
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+            res.json({ logs });
+        } catch (e) {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
+
+// DELETE: Delete a specific UserLog
+app.delete('/api/userlogs/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // 1. Delete from MongoDB if online
+        let dbDeleted = false;
+        if (mongoose.connection.readyState === 1) {
+            if (mongoose.Types.ObjectId.isValid(id)) {
+                const result = await UserLog.findByIdAndDelete(id);
+                if (result) dbDeleted = true;
+            } else {
+                const result = await UserLog.deleteOne({ timestamp: Number(id) });
+                if (result.deletedCount > 0) dbDeleted = true;
+            }
+        }
+        
+        // 2. Delete from local JSON storage
+        let localLogs = getLocalLogs();
+        const initialLength = localLogs.length;
+        
+        localLogs = localLogs.filter(l => {
+            if (l._id && String(l._id) === id) return false;
+            if (l.timestamp && String(l.timestamp) === id) return false;
+            return true;
+        });
+        
+        saveLocalLogs(localLogs);
+        const localDeleted = localLogs.length < initialLength;
+        
+        res.json({ 
+            status: 'deleted', 
+            id,
+            dbDeleted,
+            localDeleted
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE: Clear all UserLogs
+app.delete('/api/userlogs/clear', async (req, res) => {
+    try {
+        if (mongoose.connection.readyState === 1) {
+            await UserLog.deleteMany({});
+        }
+        saveLocalLogs([]);
+        res.json({ status: 'cleared' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

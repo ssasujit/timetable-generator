@@ -1895,3 +1895,281 @@ header {
 .btn-pro-expand:hover i {
     color: var(--secondary) !important;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRO ADMIN LOGS & MOBILE CARD TRANSFORM SYSTEM
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Glassmorphic Log Control Bar */
+.log-controls-bar {
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 1.2rem;
+    margin: 1.5rem 0 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
+    border-left: 4px solid var(--secondary);
+}
+
+.log-controls-bar .search-box {
+    position: relative;
+    flex: 1 1 280px;
+}
+
+.log-controls-bar .search-box input {
+    width: 100%;
+    height: 44px;
+    padding-left: 2.8rem;
+    padding-right: 1.2rem;
+    font-size: 0.9rem;
+    background: rgba(30, 41, 59, 0.7) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 10px !important;
+    color: var(--text-main) !important;
+    transition: all 0.3s ease;
+}
+
+.log-controls-bar .search-box input:focus {
+    border-color: var(--secondary) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2) !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+}
+
+.log-controls-bar .search-box i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: var(--secondary);
+    pointer-events: none;
+    transition: color 0.3s;
+}
+
+.log-controls-bar .sort-box {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1 1 240px;
+}
+
+.log-controls-bar .sort-box label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.log-controls-bar .sort-box select {
+    width: 100%;
+    height: 44px;
+    font-size: 0.85rem;
+    background: rgba(30, 41, 59, 0.7) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 10px !important;
+    color: var(--text-main) !important;
+    padding: 0.5rem 2.5rem 0.5rem 1rem !important;
+}
+
+.log-controls-bar .sort-box select:focus {
+    border-color: var(--secondary) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2) !important;
+}
+
+.log-controls-bar .actions-box {
+    display: flex;
+    gap: 0.6rem;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.log-controls-bar .actions-box button {
+    height: 44px;
+    padding: 0 1.2rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.btn-refresh-logs {
+    background: rgba(255, 255, 255, 0.07) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    color: var(--text-main) !important;
+}
+
+.btn-refresh-logs:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    transform: translateY(-2px) !important;
+}
+
+.btn-clear-logs {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border: 1px solid rgba(239, 68, 68, 0.3) !important;
+    color: #ef4444 !important;
+}
+
+.btn-clear-logs:hover {
+    background: #ef4444 !important;
+    color: white !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35) !important;
+}
+
+/* Sortable Headers Styling */
+.sortable-table th {
+    transition: background 0.3s, color 0.3s;
+    user-select: none;
+}
+
+.sortable-table th:hover {
+    background: rgba(14, 165, 233, 0.15) !important;
+    color: white !important;
+}
+
+.sort-indicator {
+    display: inline-block;
+    width: 12px;
+    font-size: 0.85rem;
+    transition: all 0.3s;
+}
+
+/* Modern Rounded Trash Delete Button */
+.btn-del-log {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border: 1px solid rgba(239, 68, 68, 0.25) !important;
+    color: #ef4444 !important;
+    padding: 8px !important;
+    border-radius: 50% !important;
+    width: 38px !important;
+    height: 38px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    cursor: pointer !important;
+    outline: none !important;
+}
+
+.btn-del-log:hover {
+    background: #ef4444 !important;
+    color: white !important;
+    border-color: #ef4444 !important;
+    transform: scale(1.15) rotate(5deg) !important;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.45) !important;
+}
+
+.btn-del-log i {
+    width: 16px;
+    height: 16px;
+}
+
+/* Mobile Transform Query (Under 768px Width) */
+@media (max-width: 768px) {
+    /* Adjust Control Bar layouts */
+    .log-controls-bar {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.8rem !important;
+        padding: 1rem !important;
+    }
+    
+    .log-controls-bar .search-box, 
+    .log-controls-bar .sort-box, 
+    .log-controls-bar .actions-box {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+    }
+    
+    .log-controls-bar .actions-box {
+        justify-content: stretch !important;
+    }
+    
+    .log-controls-bar .actions-box button {
+        flex: 1 !important;
+        justify-content: center !important;
+    }
+
+    /* Hide standard table headers */
+    .sortable-table thead {
+        display: none !important;
+    }
+
+    /* Turn table rows into modern separate cards */
+    .sortable-table, 
+    .sortable-table tbody, 
+    .sortable-table tr, 
+    .sortable-table td {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .sortable-table tbody tr {
+        background: rgba(30, 41, 59, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 14px !important;
+        padding: 1.2rem !important;
+        margin-bottom: 1.2rem !important;
+        position: relative !important;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.25) !important;
+        transition: all 0.3s ease !important;
+        border-left: 3px solid rgba(14, 165, 233, 0.4) !important;
+    }
+    
+    .sortable-table tbody tr:hover {
+        border-left-color: var(--primary) !important;
+        background: rgba(30, 41, 59, 0.6) !important;
+        transform: translateY(-3px) !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4) !important;
+    }
+
+    /* Format table cells into key-value horizontal rows */
+    .sortable-table tbody td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        text-align: right !important;
+        padding: 0.6rem 0 !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        font-size: 0.9rem !important;
+    }
+
+    .sortable-table tbody td:last-child {
+        border-bottom: none !important;
+        padding-top: 1rem !important;
+        justify-content: center !important; /* Center the actions row */
+    }
+
+    /* Map label string through attr */
+    .sortable-table tbody td::before {
+        content: attr(data-label) !important;
+        font-weight: 700 !important;
+        color: var(--accent) !important;
+        text-transform: uppercase !important;
+        font-size: 0.75rem !important;
+        letter-spacing: 0.06em !important;
+        text-align: left !important;
+        display: inline-block !important;
+    }
+    
+    /* Responsive tweaks for elements inside cards */
+    .sortable-table td[data-label="School / Org"] {
+        text-align: right !important;
+    }
+    
+    .sortable-table td[data-label="Action"]::before {
+        display: none !important; /* Hide action label, let the button stand out */
+    }
+}

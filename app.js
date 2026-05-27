@@ -25,7 +25,10 @@ let state = {
     adminPassword: 'mastergrid2026',
     adminIps: [], // List of IPs that skip payment
     paymentEnabled: true, // Global toggle for payment requirement
-    userIp: 'unknown'
+    userIp: 'unknown',
+    logSortField: 'timestamp',
+    logSortOrder: 'desc',
+    logSearchQuery: ''
 };
 
 // UI State (for collapsibility)
@@ -152,6 +155,9 @@ async function init() {
     state.adminPassword = state.adminPassword || 'mastergrid2026';
     state.adminIps = state.adminIps || [];
     state.paymentEnabled = (state.paymentEnabled !== undefined) ? state.paymentEnabled : false;
+    state.logSortField = state.logSortField || 'timestamp';
+    state.logSortOrder = state.logSortOrder || 'desc';
+    state.logSearchQuery = '';
     
     // reset temp on load
     state.tempTeacherClasses = [];
@@ -279,11 +285,21 @@ async function init() {
     }
     if (els.btnClearUsage) {
         els.btnClearUsage.onclick = async () => {
-            if(confirm("Clear all usage logs?")) {
-                state.usageLogs = [];
-                save();
-                await saveAdminStateToServer();
-                renderAdminDashboard();
+            if(confirm("Are you sure you want to clear all user logs permanently from the server and local storage?")) {
+                try {
+                    const response = await fetch('/api/userlogs/clear', { method: 'DELETE' });
+                    if (response.ok) {
+                        showToast("All user logs cleared successfully!", "success");
+                        state.usageLogs = [];
+                        save();
+                        renderAdminDashboard();
+                    } else {
+                        showToast("Failed to clear logs on server.");
+                    }
+                } catch (e) {
+                    showToast("Error clearing logs.");
+                    console.error(e);
+                }
             }
         };
     }
@@ -624,7 +640,7 @@ function renderAdminDashboard() {
         }
     }
     
-    const logs = state.usageLogs || [];
+    let logs = [...(state.usageLogs || [])];
     const payments = state.paymentRecords || {};
     const active = state.activeUsers || [];
     
@@ -634,35 +650,97 @@ function renderAdminDashboard() {
     document.getElementById('stat-total-logs').innerText = logs.length;
     document.getElementById('stat-live-users').innerText = active.length;
     
-    // Sort logs by timestamp descending (most recent first)
-    logs.sort((a, b) => b.timestamp - a.timestamp);
+    // Live Search Filtering
+    const searchQuery = (state.logSearchQuery || '').trim().toLowerCase();
+    if (searchQuery) {
+        logs = logs.filter(l => {
+            const school = (l.school || '').toLowerCase();
+            const year = (l.year || '').toLowerCase();
+            const ip = (l.ip || '').toLowerCase();
+            const date = (l.date || '').toLowerCase();
+            return school.includes(searchQuery) || year.includes(searchQuery) || ip.includes(searchQuery) || date.includes(searchQuery);
+        });
+    }
+
+    // Dynamic Sorting
+    const sortField = state.logSortField || 'timestamp';
+    const sortOrder = state.logSortOrder || 'desc';
+    
+    logs.sort((a, b) => {
+        let valA, valB;
+        if (sortField === 'timestamp') {
+            valA = a.timestamp || 0;
+            valB = b.timestamp || 0;
+        } else if (sortField === 'school') {
+            valA = (a.school || '').toString().toLowerCase();
+            valB = (b.school || '').toString().toLowerCase();
+        } else if (sortField === 'year') {
+            valA = (a.year || '').toString().toLowerCase();
+            valB = (b.year || '').toString().toLowerCase();
+        } else if (sortField === 'ip') {
+            valA = (a.ip || '').toString().toLowerCase();
+            valB = (b.ip || '').toString().toLowerCase();
+        } else if (sortField === 'date') {
+            valA = (a.date || '').toString().toLowerCase();
+            valB = (b.date || '').toString().toLowerCase();
+        } else if (sortField === 'time') {
+            valA = a.timestamp || 0;
+            valB = b.timestamp || 0;
+        } else if (sortField === 'previews') {
+            valA = a.previews || 0;
+            valB = b.previews || 0;
+        } else if (sortField === 'pdfs') {
+            valA = a.pdfs || 0;
+            valB = b.pdfs || 0;
+        } else if (sortField === 'slno') {
+            valA = a.timestamp || 0;
+            valB = b.timestamp || 0;
+        }
+        
+        if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // Update Sorting Headers & Dropdown UI Indicators
+    updateSortIndicators();
+
     const totalLogsCount = logs.length;
     
     els.adminRecordsBody.innerHTML = logs.map((log, i) => {
-        const slNo = totalLogsCount - i;
-        const schoolOrg = log.year ? `${log.school} (${log.year})` : log.school;
+        const slNo = sortOrder === 'desc' ? totalLogsCount - i : i + 1;
+        const schoolName = log.school || 'Guest';
+        const yearDisplay = log.year || '-';
         
-        // Render Preview and PDF exactly as requested: SL. NO ^ count (drawn as superscript)
         const previews = log.previews || 0;
         const pdfs = log.pdfs || 0;
+        
         const previewDisplay = `<span class="sketched-badge" style="font-size: 1rem; font-weight: 500; color: var(--text);">${slNo}<sup style="color: var(--primary); font-weight: 800; font-size: 0.85rem; margin-left: 2px;">${previews}</sup></span>`;
         const pdfDisplay = `<span class="sketched-badge" style="font-size: 1rem; font-weight: 500; color: var(--text);">${slNo}<sup style="color: var(--secondary); font-weight: 800; font-size: 0.85rem; margin-left: 2px;">${pdfs}</sup></span>`;
-        const time = new Date(log.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
+        
+        const dateStr = log.date || new Date(log.timestamp).toLocaleDateString('en-GB').replace(/\//g, '.');
+        const timeStr = new Date(log.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        
+        const logId = log.id || log._id || log.timestamp;
         
         return `
             <tr>
-                <td style="font-weight: 700; color: var(--text-muted); text-align: center;">${slNo}</td>
-                <td style="text-align: center;">${log.date || new Date(log.timestamp).toLocaleDateString('en-GB').replace(/\//g, '.')}</td>
-                <td style="text-align: center; font-weight: 600; color: var(--accent);">${time}</td>
-                <td style="color: var(--secondary); font-weight: 600; text-align: left;">${schoolOrg}</td>
-                <td style="font-family: monospace; font-size: 0.85rem; text-align: center;">${log.ip}</td>
-                <td style="text-align: center;">${previewDisplay}</td>
-                <td style="text-align: center;">${pdfDisplay}</td>
+                <td data-label="SL. NO" style="font-weight: 700; color: var(--text-muted); text-align: center;">${slNo}</td>
+                <td data-label="Date" style="text-align: center;">${dateStr}</td>
+                <td data-label="Time" style="text-align: center; font-weight: 600; color: var(--accent);">${timeStr}</td>
+                <td data-label="School / Org" style="color: var(--secondary); font-weight: 600; text-align: left;">${schoolName}</td>
+                <td data-label="Year" style="text-align: center; font-weight: 500; color: var(--text-main);">${yearDisplay}</td>
+                <td data-label="IP Address" style="font-family: monospace; font-size: 0.85rem; text-align: center;">${log.ip}</td>
+                <td data-label="Preview" style="text-align: center;">${previewDisplay}</td>
+                <td data-label="Pdf" style="text-align: center;">${pdfDisplay}</td>
+                <td data-label="Action" style="text-align: center;">
+                    <button class="btn-del-log" onclick="deleteUserLog('${logId}')" title="Delete this entry">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </td>
             </tr>
         `;
-    }).join('') || '<tr><td colspan="7" style="text-align:center;">No logs found</td></tr>';
-
+    }).join('') || '<tr><td colspan="9" style="text-align:center; padding: 2rem; color: var(--text-muted);">No logs found matching search criteria</td></tr>';
 
     // Render Active Users
     const liveBody = document.getElementById('admin-live-body');
@@ -690,7 +768,6 @@ function renderAdminDashboard() {
             '<i data-lucide="shield-off"></i> Untrust Current IP' : 
             '<i data-lucide="shield-check"></i> Trust Current IP';
         toggleBtn.style.color = isExempt ? 'var(--danger)' : 'var(--secondary)';
-        if(window.lucide) lucide.createIcons();
     }
 
     // Update Global Payment Toggle UI
@@ -705,9 +782,80 @@ function renderAdminDashboard() {
             '<i data-lucide="toggle-right"></i> Disable Payments' : 
             '<i data-lucide="toggle-left"></i> Enable Payments';
         payToggleBtn.style.color = state.paymentEnabled ? 'var(--danger)' : '#10b981';
-        if(window.lucide) lucide.createIcons();
     }
+    
+    if(window.lucide) lucide.createIcons();
 }
+
+// --- Window scoped controllers for Log Sorting, Searching & Deletion ---
+window.handleLogSearch = function(query) {
+    state.logSearchQuery = query;
+    renderAdminDashboard();
+};
+
+window.handleLogSortSelect = function(sortVal) {
+    const [field, order] = sortVal.split('_');
+    state.logSortField = field;
+    state.logSortOrder = order;
+    renderAdminDashboard();
+};
+
+window.handleHeaderSort = function(field) {
+    if (state.logSortField === field) {
+        state.logSortOrder = state.logSortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+        state.logSortField = field;
+        state.logSortOrder = (field === 'timestamp' || field === 'previews' || field === 'pdfs' || field === 'date' || field === 'slno') ? 'desc' : 'asc';
+    }
+    
+    // Sync Select Dropdown Value
+    const select = document.getElementById('log-sort-select');
+    if (select) {
+        select.value = `${state.logSortField}_${state.logSortOrder}`;
+    }
+    
+    renderAdminDashboard();
+};
+
+window.updateSortIndicators = function() {
+    const fields = ['slno', 'date', 'time', 'school', 'year', 'ip', 'previews', 'pdfs'];
+    fields.forEach(f => {
+        const ind = document.getElementById(`sort-indicator-${f}`);
+        if (ind) {
+            if (state.logSortField === f) {
+                ind.innerHTML = state.logSortOrder === 'asc' ? ' &uarr;' : ' &darr;';
+                ind.style.color = 'var(--secondary)';
+                ind.style.fontWeight = '800';
+            } else {
+                ind.innerHTML = '';
+            }
+        }
+    });
+};
+
+window.deleteUserLog = async function(id) {
+    if (!confirm("Are you sure you want to delete this specific log entry?")) return;
+    try {
+        const response = await fetch(`/api/userlogs/${id}`, {
+            method: 'DELETE'
+        });
+        if (response.ok) {
+            showToast("Log entry deleted successfully!", "success");
+            // Remove from local state
+            state.usageLogs = (state.usageLogs || []).filter(l => {
+                const logId = l.id || l._id || l.timestamp;
+                return String(logId) !== String(id);
+            });
+            save();
+            renderAdminDashboard();
+        } else {
+            showToast("Failed to delete log from server.");
+        }
+    } catch (e) {
+        showToast("Error deleting log.");
+        console.error(e);
+    }
+};
 
 // Add auto-refresh for admin dashboard
 setInterval(async () => {
