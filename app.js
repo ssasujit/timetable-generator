@@ -592,52 +592,24 @@ function renderAdminDashboard() {
     const dbStatusTag = document.getElementById('admin-db-status');
     if (dbStatusTag) {
         if (state.dbConnected !== false) {
-            dbStatusTag.innerText = "MONGODB ONLINE";
+            dbStatusTag.innerText = "CLOUD ENGINE";
             dbStatusTag.className = "db-status online";
+            dbStatusTag.style.background = "rgba(59, 130, 246, 0.1)";
+            dbStatusTag.style.color = "#3b82f6";
+            dbStatusTag.style.border = "1px solid rgba(59, 130, 246, 0.3)";
+        } else {
+            dbStatusTag.innerText = "LOCAL ENGINE";
+            dbStatusTag.className = "db-status local";
             dbStatusTag.style.background = "rgba(16, 185, 129, 0.1)";
             dbStatusTag.style.color = "#10b981";
             dbStatusTag.style.border = "1px solid rgba(16, 185, 129, 0.3)";
-        } else {
-            dbStatusTag.innerText = "MONGODB OFFLINE";
-            dbStatusTag.className = "db-status offline";
-            dbStatusTag.style.background = "rgba(239, 68, 68, 0.1)";
-            dbStatusTag.style.color = "#ef4444";
-            dbStatusTag.style.border = "1px solid rgba(239, 68, 68, 0.3)";
         }
     }
 
-    // DB connection status banner setup in scroll container
-    const scrollContainer = els.adminDashModal ? els.adminDashModal.querySelector('.guide-scroll-container') : null;
-    if (scrollContainer) {
-        let dbWarningBanner = document.getElementById('db-connection-warning');
-        if (state.dbConnected === false) {
-            if (!dbWarningBanner) {
-                const warningHtml = `
-                    <div id="db-connection-warning" class="guide-section" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; border-left: 4px solid #ef4444;">
-                        <h4 style="color: #ef4444; margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem; font-weight: 700;">
-                            <i data-lucide="alert-triangle"></i> Cloud MongoDB Offline
-                        </h4>
-                        <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem; line-height: 1.5;">
-                            The backend node server cannot connect to the cloud MongoDB database (Mongoose). Persistent school logs, payments, and admin settings are in <strong>read-only / offline simulation mode</strong>.
-                        </p>
-                        <div style="font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 6px; color: #fca5a5; overflow-x: auto; margin-top: 0.25rem;">
-                            Error: ${state.dbError || 'Connection timed out / Refused'}
-                        </div>
-                        <p style="color: var(--text-muted); margin: 0; font-size: 0.85rem; font-style: italic; margin-top: 0.25rem;">
-                            <strong>Solution:</strong> Set the MONGODB_URI environment variable on your server to a valid MongoDB Atlas connection string to enable full cloud persistence.
-                        </p>
-                    </div>
-                `;
-                scrollContainer.insertAdjacentHTML('afterbegin', warningHtml);
-                if(window.lucide) lucide.createIcons();
-            } else {
-                dbWarningBanner.style.display = 'flex';
-            }
-        } else {
-            if (dbWarningBanner) {
-                dbWarningBanner.style.display = 'none';
-            }
-        }
+    // Hide any legacy warning banners if they exist
+    const dbWarningBanner = document.getElementById('db-connection-warning');
+    if (dbWarningBanner) {
+        dbWarningBanner.style.display = 'none';
     }
     
     let logs = [...(state.usageLogs || [])];

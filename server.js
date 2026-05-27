@@ -45,6 +45,68 @@ function saveLocalLogs(logs) {
     }
 }
 
+// Local Storage Fallback for settings, payments, and users
+const PAYMENTS_FILE = path.join(STORAGE_DIR, 'payments.json');
+const SETTINGS_FILE = path.join(STORAGE_DIR, 'settings.json');
+const USERS_FILE = path.join(STORAGE_DIR, 'users.json');
+
+function getLocalPayments() {
+    try {
+        if (fs.existsSync(PAYMENTS_FILE)) {
+            return JSON.parse(fs.readFileSync(PAYMENTS_FILE, 'utf8') || '{}');
+        }
+    } catch (e) {
+        console.error("Error reading local payments:", e);
+    }
+    return {};
+}
+
+function saveLocalPayments(payments) {
+    try {
+        fs.writeFileSync(PAYMENTS_FILE, JSON.stringify(payments, null, 2), 'utf8');
+    } catch (e) {
+        console.error("Error saving local payments:", e);
+    }
+}
+
+function getLocalSettings() {
+    try {
+        if (fs.existsSync(SETTINGS_FILE)) {
+            return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8') || '{"paymentEnabled":false,"adminPassword":"mastergrid2026","adminIps":[]}');
+        }
+    } catch (e) {
+        console.error("Error reading local settings:", e);
+    }
+    return { paymentEnabled: false, adminPassword: 'mastergrid2026', adminIps: [] };
+}
+
+function saveLocalSettings(settings) {
+    try {
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+    } catch (e) {
+        console.error("Error saving local settings:", e);
+    }
+}
+
+function getLocalUsers() {
+    try {
+        if (fs.existsSync(USERS_FILE)) {
+            return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8') || '{}');
+        }
+    } catch (e) {
+        console.error("Error reading local users:", e);
+    }
+    return {};
+}
+
+function saveLocalUsers(users) {
+    try {
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+    } catch (e) {
+        console.error("Error saving local users:", e);
+    }
+}
+
 // Helper to get local IPv4 network address
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -240,6 +302,16 @@ app.get('/api/state', async (req, res) => {
     if (mongoose.connection.readyState !== 1) {
         state.dbConnected = false;
         state.dbError = "MongoDB connection not established / offline";
+        
+        // Load local settings
+        const localSettings = getLocalSettings();
+        state.paymentEnabled = localSettings.paymentEnabled;
+        state.adminPassword = localSettings.adminPassword;
+        state.adminIps = localSettings.adminIps;
+
+        // Load local payments
+        state.paymentRecords = getLocalPayments();
+
         try {
             const localLogs = getLocalLogs();
             localLogs.sort((a, b) => b.timestamp - a.timestamp);
@@ -278,6 +350,14 @@ app.get('/api/state', async (req, res) => {
         const trustedIps = await TrustedIp.find({});
         state.adminIps = trustedIps.map(t => t.ip);
 
+        // Save to local storage for offline synchronization
+        saveLocalSettings({
+            paymentEnabled: state.paymentEnabled,
+            adminPassword: state.adminPassword,
+            adminIps: state.adminIps
+        });
+        saveLocalPayments(state.paymentRecords);
+
         // Load new UserLogs sorted by date/timestamp desc
         let logs = [];
         try {
@@ -304,6 +384,16 @@ app.get('/api/state', async (req, res) => {
     } catch (err) {
         state.dbConnected = false;
         state.dbError = err.message;
+
+        // Load local settings
+        const localSettings = getLocalSettings();
+        state.paymentEnabled = localSettings.paymentEnabled;
+        state.adminPassword = localSettings.adminPassword;
+        state.adminIps = localSettings.adminIps;
+
+        // Load local payments
+        state.paymentRecords = getLocalPayments();
+
         try {
             const logs = getLocalLogs();
             logs.sort((a, b) => b.timestamp - a.timestamp);
@@ -321,7 +411,7 @@ app.get('/api/state', async (req, res) => {
         } catch (localErr) {
             console.error("Error reading local logs in catch fallback:", localErr.message);
         }
-        res.json(state); // Return fallback state so dashboard works even if DB is offline!
+        res.json(state);
     }
 });
 
@@ -330,11 +420,21 @@ app.post('/api/pay', async (req, res) => {
     try {
         const { school, ip, timestamp } = req.body;
         const key = `${school}_${ip}`;
-        await Payment.updateOne(
-            { school_ip: key },
-            { timestamp: timestamp || Date.now() },
-            { upsert: true }
-        );
+        const paidTime = timestamp || Date.now();
+
+        // 1. Local storage write
+        const localPayments = getLocalPayments();
+        localPayments[key] = paidTime;
+        saveLocalPayments(localPayments);
+
+        // 2. MongoDB write (if online)
+        if (mongoose.connection.readyState === 1) {
+            await Payment.updateOne(
+                { school_ip: key },
+                { timestamp: paidTime },
+                { upsert: true }
+            );
+        }
         res.json({ status: 'paid', key: key });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -346,36 +446,53 @@ app.post('/api/state', async (req, res) => {
     try {
         const data = req.body;
 
-        if (data.paymentEnabled !== undefined) {
-            await AdminSetting.updateOne(
-                { key: 'paymentEnabled' },
-                { value: String(data.paymentEnabled) },
-                { upsert: true }
-            );
-        }
-        if (data.adminPassword) {
-            await AdminSetting.updateOne(
-                { key: 'adminPassword' },
-                { value: data.adminPassword },
-                { upsert: true }
-            );
-        }
+        // 1. Update local settings
+        const localSettings = getLocalSettings();
+        if (data.paymentEnabled !== undefined) localSettings.paymentEnabled = data.paymentEnabled;
+        if (data.adminPassword) localSettings.adminPassword = data.adminPassword;
+        if (data.adminIps) localSettings.adminIps = data.adminIps;
+        saveLocalSettings(localSettings);
 
-        if (data.adminIps) {
-            await TrustedIp.deleteMany({});
-            if (data.adminIps.length > 0) {
-                const ipsToInsert = data.adminIps.map(ip => ({ ip }));
-                await TrustedIp.insertMany(ipsToInsert);
-            }
-        }
-
+        // 2. Update local payments
         if (data.paymentRecords) {
+            const localPayments = getLocalPayments();
             for (const [k, v] of Object.entries(data.paymentRecords)) {
-                await Payment.updateOne(
-                    { school_ip: k },
-                    { timestamp: v },
+                localPayments[k] = v;
+            }
+            saveLocalPayments(localPayments);
+        }
+
+        // 3. Update MongoDB (if online)
+        if (mongoose.connection.readyState === 1) {
+            if (data.paymentEnabled !== undefined) {
+                await AdminSetting.updateOne(
+                    { key: 'paymentEnabled' },
+                    { value: String(data.paymentEnabled) },
                     { upsert: true }
                 );
+            }
+            if (data.adminPassword) {
+                await AdminSetting.updateOne(
+                    { key: 'adminPassword' },
+                    { value: data.adminPassword },
+                    { upsert: true }
+                );
+            }
+            if (data.adminIps) {
+                await TrustedIp.deleteMany({});
+                if (data.adminIps.length > 0) {
+                    const ipsToInsert = data.adminIps.map(ip => ({ ip }));
+                    await TrustedIp.insertMany(ipsToInsert);
+                }
+            }
+            if (data.paymentRecords) {
+                for (const [k, v] of Object.entries(data.paymentRecords)) {
+                    await Payment.updateOne(
+                        { school_ip: k },
+                        { timestamp: v },
+                        { upsert: true }
+                    );
+                }
             }
         }
 
@@ -402,21 +519,45 @@ app.post('/api/heartbeat', async (req, res) => {
             lastSeenStr: new Date().toLocaleTimeString()
         };
 
-        // Get global paymentEnabled
-        const paymentSetting = await AdminSetting.findOne({ key: 'paymentEnabled' });
-        const paymentEnabled = paymentSetting ? paymentSetting.value === 'true' : false;
+        // Determine settings (local fallback + mongo)
+        let paymentEnabled = false;
+        let paidTimestamp = null;
 
-        // Get payment status for this user
-        const pkey = `${schoolName}_${ip}`;
-        const pmt = await Payment.findOne({ school_ip: pkey });
-        const paidTimestamp = pmt ? pmt.timestamp : null;
+        if (mongoose.connection.readyState === 1) {
+            const paymentSetting = await AdminSetting.findOne({ key: 'paymentEnabled' });
+            paymentEnabled = paymentSetting ? paymentSetting.value === 'true' : false;
 
-        // Update or insert User
-        await User.updateOne(
-            { school: schoolName, ip: ip },
-            { $set: { last_seen: now }, $setOnInsert: { created_at: now } },
-            { upsert: true }
-        );
+            const pkey = `${schoolName}_${ip}`;
+            const pmt = await Payment.findOne({ school_ip: pkey });
+            paidTimestamp = pmt ? pmt.timestamp : null;
+
+            await User.updateOne(
+                { school: schoolName, ip: ip },
+                { $set: { last_seen: now }, $setOnInsert: { created_at: now } },
+                { upsert: true }
+            );
+        } else {
+            // Local fallback
+            const localSettings = getLocalSettings();
+            paymentEnabled = localSettings.paymentEnabled;
+
+            const pkey = `${schoolName}_${ip}`;
+            const localPayments = getLocalPayments();
+            paidTimestamp = localPayments[pkey] || null;
+        }
+
+        // Always update local users database
+        const localUsers = getLocalUsers();
+        const userKey = `${schoolName}_${ip}`;
+        if (!localUsers[userKey]) {
+            localUsers[userKey] = {
+                school: schoolName,
+                ip: ip,
+                created_at: now
+            };
+        }
+        localUsers[userKey].last_seen = now;
+        saveLocalUsers(localUsers);
 
         res.json({ status: 'alive', yourIp: ip, paymentEnabled, paidTimestamp });
     } catch (err) {
@@ -428,21 +569,56 @@ app.post('/api/heartbeat', async (req, res) => {
 // API: GetAllUsers
 app.get('/api/users', async (req, res) => {
     try {
-        const users = await User.find({}).sort({ last_seen: -1 });
-        const payments = await Payment.find({});
-        const paidKeys = new Set(payments.map(p => p.school_ip));
+        let userRows = [];
 
-        const userRows = users.map((u, i) => {
-            const schoolIpKey = `${u.school}_${u.ip}`;
-            return {
-                id: i + 1,
-                school: u.school,
-                ip: u.ip,
-                last_seen: u.last_seen,
-                created_at: u.created_at,
-                has_paid: paidKeys.has(schoolIpKey) ? 1 : 0
-            };
-        });
+        if (mongoose.connection.readyState === 1) {
+            const users = await User.find({}).sort({ last_seen: -1 });
+            const payments = await Payment.find({});
+            const paidKeys = new Set(payments.map(p => p.school_ip));
+
+            userRows = users.map((u, i) => {
+                const schoolIpKey = `${u.school}_${u.ip}`;
+                return {
+                    id: i + 1,
+                    school: u.school,
+                    ip: u.ip,
+                    last_seen: u.last_seen,
+                    created_at: u.created_at,
+                    has_paid: paidKeys.has(schoolIpKey) ? 1 : 0
+                };
+            });
+
+            // Sync to local users
+            const localUsers = {};
+            users.forEach(u => {
+                const key = `${u.school}_${u.ip}`;
+                localUsers[key] = {
+                    school: u.school,
+                    ip: u.ip,
+                    last_seen: u.last_seen,
+                    created_at: u.created_at
+                };
+            });
+            saveLocalUsers(localUsers);
+
+        } else {
+            // Local fallback
+            const localUsers = getLocalUsers();
+            const localPayments = getLocalPayments();
+
+            const sortedUsers = Object.values(localUsers).sort((a, b) => b.last_seen - a.last_seen);
+            userRows = sortedUsers.map((u, i) => {
+                const schoolIpKey = `${u.school}_${u.ip}`;
+                return {
+                    id: i + 1,
+                    school: u.school,
+                    ip: u.ip,
+                    last_seen: u.last_seen,
+                    created_at: u.created_at || u.last_seen,
+                    has_paid: localPayments[schoolIpKey] ? 1 : 0
+                };
+            });
+        }
 
         res.json({ users: userRows });
     } catch (err) {
@@ -455,7 +631,16 @@ app.post('/api/unpay', async (req, res) => {
     try {
         const { school, ip } = req.body;
         const key = `${school}_${ip}`;
-        await Payment.deleteOne({ school_ip: key });
+
+        // 1. Local storage delete
+        const localPayments = getLocalPayments();
+        delete localPayments[key];
+        saveLocalPayments(localPayments);
+
+        // 2. MongoDB delete (if online)
+        if (mongoose.connection.readyState === 1) {
+            await Payment.deleteOne({ school_ip: key });
+        }
         res.json({ status: 'unpaid', key: key });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -466,9 +651,22 @@ app.post('/api/unpay', async (req, res) => {
 app.delete('/api/users', async (req, res) => {
     try {
         const { school, ip } = req.body;
-        await User.deleteOne({ school: school, ip: ip });
         const key = `${school}_${ip}`;
-        await Payment.deleteOne({ school_ip: key });
+
+        // 1. Local storage delete user & payment
+        const localUsers = getLocalUsers();
+        delete localUsers[key];
+        saveLocalUsers(localUsers);
+
+        const localPayments = getLocalPayments();
+        delete localPayments[key];
+        saveLocalPayments(localPayments);
+
+        // 2. MongoDB delete (if online)
+        if (mongoose.connection.readyState === 1) {
+            await User.deleteOne({ school: school, ip: ip });
+            await Payment.deleteOne({ school_ip: key });
+        }
         res.json({ status: 'deleted' });
     } catch (err) {
         res.status(500).json({ error: err.message });
